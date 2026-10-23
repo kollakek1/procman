@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: fmt / clippy / tests on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Установить Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Кеш сборки
+        uses: Swatinem/rust-cache@v2
+
+      - name: Форматирование
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (предупреждения — ошибки)
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Тесты
+        run: cargo test --all-targets
+
+      - name: Сборка release
+        run: cargo build --release
