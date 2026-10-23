@@ -1,8 +1,8 @@
-//! `procman watch` — живой монитор с обновлением в реальном времени.
+//! `procman watch` — a live monitor refreshed in real time.
 //!
-//! Управление: стрелки/`j`/`k` — выбор, `s` — ключ сортировки, `r` — направление,
-//! `f` — фильтр, `x` — снять задачу, `пробел` — пауза, `+`/`-` — интервал,
-//! `Enter` — подробности, `?` — справка, `q` — выход.
+//! Controls: arrows/`j`/`k` — selection, `s` — sort key, `r` — direction,
+//! `f` — filter, `x` — end task, `space` — pause, `+`/`-` — interval,
+//! `Enter` — details, `?` — help, `q` — quit.
 
 use std::collections::VecDeque;
 use std::io::{self, IsTerminal, Write};
@@ -28,30 +28,30 @@ use crate::util::{
 
 #[derive(Args, Debug)]
 pub struct WatchArgs {
-    /// Интервал обновления, секунды
-    #[arg(short, long, default_value_t = 1.0, value_name = "СЕК")]
+    /// Refresh interval, seconds
+    #[arg(short, long, default_value_t = 1.0, value_name = "SEC")]
     pub interval: f64,
-    /// Начальный ключ сортировки
+    /// Initial sort key
     #[arg(short, long, value_enum, default_value_t = SortBy::Cpu)]
     pub sort: SortBy,
-    /// Сортировать по возрастанию
+    /// Sort ascending
     #[arg(long)]
     pub asc: bool,
-    /// Сколько процессов держать в списке
+    /// How many processes to keep in the list
     #[arg(short = 'n', long, default_value_t = 500, value_name = "N")]
     pub top: usize,
-    /// Начальный фильтр по имени, PID или пользователю
-    #[arg(short, long, value_name = "ТЕКСТ")]
+    /// Initial filter by name, PID or user
+    #[arg(short, long, value_name = "TEXT")]
     pub filter: Option<String>,
-    /// Только процессы указанного пользователя
-    #[arg(short, long, value_name = "ИМЯ")]
+    /// Only processes owned by this user
+    #[arg(short, long, value_name = "NAME")]
     pub user: Option<String>,
-    /// Показывать командные строки
+    /// Show command lines
     #[arg(short = 'c', long)]
     pub cmd: bool,
 }
 
-/// Что нужно сделать после обработки клавиши.
+/// What to do after handling a key.
 enum Action {
     Quit,
     Kill(u32),
@@ -113,7 +113,7 @@ impl State {
         self.history.iter().copied().collect()
     }
 
-    /// Держит выделение в границах списка и подгоняет окно прокрутки.
+    /// Keeps the selection inside the list and adjusts the scroll window.
     fn clamp_selection(&mut self, rows: usize, visible_rows: usize) {
         if rows == 0 {
             self.selected = 0;
@@ -131,12 +131,13 @@ impl State {
     }
 }
 
-/// RAII-обёртка терминала: возвращает экран и режим при выходе, в том числе при ошибке.
+/// An RAII terminal wrapper: it restores the screen and the mode on exit,
+/// including on errors.
 struct Terminal;
 
 impl Terminal {
     fn enter(out: &mut io::Stdout) -> Result<Self> {
-        terminal::enable_raw_mode().context("не удалось включить режим raw")?;
+        terminal::enable_raw_mode().context("failed to enable raw mode")?;
         execute!(out, terminal::EnterAlternateScreen, cursor::Hide)?;
         Ok(Self)
     }
@@ -154,7 +155,7 @@ fn heading(text: &str) -> Line {
     Line::plain(format!("{text:<8}"))
 }
 
-/// Текущее время в UTC (часы:минуты:секунды).
+/// Current time in UTC (hours:minutes:seconds).
 fn clock() -> String {
     let now = crate::util::unix_now();
     crate::util::epoch_utc(now)[11..19].to_owned()
@@ -176,14 +177,14 @@ fn header_lines(state: &State, snapshot: &Snapshot, width: usize) -> Vec<Line> {
         .long_os
         .clone()
         .or_else(|| snapshot.host.os_name.clone())
-        .unwrap_or_else(|| "неизвестная ОС".to_owned());
+        .unwrap_or_else(|| "unknown OS".to_owned());
     let title = Line::new()
         .styled(Code::Bold, "procman")
-        .push(" — диспетчер задач   ")
+        .push(" — task manager   ")
         .styled(
             Code::Dim,
             format!(
-                "{os} · {} · аптайм {} · ядер {}/{} · процессов {} · {}",
+                "{os} · {} · uptime {} · cores {}/{} · processes {} · {}",
                 snapshot.host.hostname.clone().unwrap_or_default(),
                 human_uptime(snapshot.host.uptime),
                 snapshot.host.physical_cores,
@@ -213,13 +214,13 @@ fn header_lines(state: &State, snapshot: &Snapshot, width: usize) -> Vec<Line> {
                 Code::Cyan,
                 sparkline(&state.history_values(), table::ascii()),
             )
-            .styled(Code::Dim, format!("  до {freq} МГц")),
+            .styled(Code::Dim, format!("  up to {freq} MHz")),
     );
 
     let mem = &snapshot.mem;
     let mem_percent = mem.used_percent();
     lines.push(
-        heading("ПАМЯТЬ")
+        heading("MEMORY")
             .styled(
                 ansi::load_code(mem_percent),
                 bar(mem_percent, bar_width, table::ascii()),
@@ -230,7 +231,7 @@ fn header_lines(state: &State, snapshot: &Snapshot, width: usize) -> Vec<Line> {
             .styled(
                 Code::Dim,
                 format!(
-                    "{} / {}   подкачка {:.1}%   доступно {}",
+                    "{} / {}   swap {:.1}%   available {}",
                     bytes_long(mem.used),
                     bytes_long(mem.total),
                     mem.swap_percent(),
@@ -240,7 +241,7 @@ fn header_lines(state: &State, snapshot: &Snapshot, width: usize) -> Vec<Line> {
     );
 
     lines.push(
-        heading("СПИСОК")
+        heading("LIST")
             .styled(
                 Code::Bold,
                 format!(
@@ -252,21 +253,21 @@ fn header_lines(state: &State, snapshot: &Snapshot, width: usize) -> Vec<Line> {
             .styled(
                 Code::Dim,
                 format!(
-                    "   интервал {:.1} с{}   фильтр: {}{}   обновлений {}",
+                    "   interval {:.1} s{}   filter: {}{}   refreshes {}",
                     state.interval.as_secs_f64(),
-                    if state.paused { "   [ПАУЗА]" } else { "" },
+                    if state.paused { "   [PAUSED]" } else { "" },
                     state.filter.clone().unwrap_or_else(|| "—".to_owned()),
                     state
                         .user
                         .clone()
-                        .map_or_else(String::new, |user| format!("   пользователь: {user}")),
+                        .map_or_else(String::new, |user| format!("   user: {user}")),
                     state.ticks
                 ),
             )
             .styled(
                 Code::Dim,
                 if state.with_cmd {
-                    "   +командные строки"
+                    "   +command lines"
                 } else {
                     ""
                 },
@@ -284,21 +285,21 @@ fn header_lines(state: &State, snapshot: &Snapshot, width: usize) -> Vec<Line> {
 fn footer_lines(state: &State, width: usize) -> Vec<Line> {
     let hints = Line::colored(
         Code::Dim,
-        "↑/↓ выбор · s сортировка · r порядок · f фильтр · c сброс · x снять задачу · \
-         Enter подробности · пробел пауза · +/- интервал · ? справка · q выход",
+        "↑/↓ select · s sort · r order · f filter · c reset · x end task · \
+         Enter details · space pause · +/- interval · ? help · q quit",
     );
 
     let status = if let Some(input) = &state.input {
         Line::new()
-            .styled(Code::Bold, "Фильтр: ")
+            .styled(Code::Bold, "Filter: ")
             .styled(Code::BrightYellow, sanitize(input))
             .styled(Code::BrightYellow, "_")
-            .styled(Code::Dim, "   Enter — применить, Esc — отмена")
+            .styled(Code::Dim, "   Enter — apply, Esc — cancel")
     } else if let Some((pid, name)) = &state.pending_kill {
         Line::new()
-            .styled(Code::Bold, "Снять задачу: ")
+            .styled(Code::Bold, "End task: ")
             .styled(Code::BrightRed, format!("{} (PID {pid})", sanitize(name)))
-            .styled(Code::Dim, "   Завершить? [y/N]")
+            .styled(Code::Dim, "   End it? [y/N]")
     } else if let Some(message) = &state.status {
         Line::plain(sanitize(message))
     } else {
@@ -310,7 +311,7 @@ fn footer_lines(state: &State, width: usize) -> Vec<Line> {
     ]
 }
 
-/// Рисует рамку-панель заданной ширины.
+/// Draws a bordered panel of the given width.
 fn box_panel(title: &str, body: &[String], width: usize) -> Vec<Line> {
     let (tl, tr, bl, br, h, v) = if table::ascii() {
         ('+', '+', '+', '+', '-', '|')
@@ -352,24 +353,24 @@ fn box_panel(title: &str, body: &[String], width: usize) -> Vec<Line> {
 
 fn help_panel(width: usize) -> Vec<Line> {
     let body = [
-        "↑ / ↓ / j / k        выбрать процесс",
-        "Home / End / g / G   начало / конец списка",
-        "PageUp / PageDown    на страницу",
-        "s                    следующий ключ сортировки",
-        "r                    изменить направление сортировки",
-        "f                    фильтр по имени, PID, пользователю",
-        "c                    сбросить фильтр",
-        "x / Delete           снять задачу с выбранного процесса",
-        "Enter                подробности о процессе",
-        "пробел               пауза / продолжить",
-        "+ / -                увеличить / уменьшить интервал",
-        "a                    показать / скрыть командные строки",
-        "q / Esc              выход",
+        "↑ / ↓ / j / k        select a process",
+        "Home / End / g / G   jump to top / bottom",
+        "PageUp / PageDown    move a page",
+        "s                    next sort key",
+        "r                    change sort direction",
+        "f                    filter by name, PID or user",
+        "c                    clear the filter",
+        "x / Delete           end the selected process",
+        "Enter                details about the process",
+        "space                pause / resume",
+        "+ / -                increase / decrease the interval",
+        "a                    show / hide command lines",
+        "q / Esc              quit",
     ]
     .iter()
     .map(|line| (*line).to_owned())
     .collect::<Vec<_>>();
-    box_panel("Справка", &body, width.min(80))
+    box_panel("Help", &body, width.min(80))
 }
 
 fn process_panel(snapshot: &Snapshot, proc_: &Proc, width: usize) -> Vec<Line> {
@@ -379,29 +380,29 @@ fn process_panel(snapshot: &Snapshot, proc_: &Proc, width: usize) -> Vec<Line> {
     );
     let body = vec![
         format!("PID                 {}", proc_.pid),
-        format!("Имя                 {}", sanitize(&proc_.name)),
+        format!("Name                {}", sanitize(&proc_.name)),
         format!(
-            "Состояние           {}",
+            "State               {}",
             crate::cmd::list::status_text(&proc_.status)
         ),
-        format!("Пользователь        {}", sanitize(&proc_.user)),
-        format!("Родитель            {parent}"),
-        format!("Дочерних            {}", proc_.children),
+        format!("User                {}", sanitize(&proc_.user)),
+        format!("Parent              {parent}"),
+        format!("Children            {}", proc_.children),
         format!("CPU                 {:.1}%", proc_.cpu),
-        format!("Память (RSS)        {}", bytes_long(proc_.mem)),
-        format!("Виртуальная память  {}", bytes_long(proc_.virt)),
-        format!("Время работы        {}", duration(proc_.run_time)),
-        format!("Запущен (UTC)       {}", epoch_utc(proc_.start_time)),
-        format!("Чтение диска        {}", bytes_short(proc_.read_bytes)),
-        format!("Запись диска        {}", bytes_short(proc_.written_bytes)),
+        format!("Memory (RSS)        {}", bytes_long(proc_.mem)),
+        format!("Virtual memory      {}", bytes_long(proc_.virt)),
+        format!("Run time            {}", duration(proc_.run_time)),
+        format!("Started (UTC)       {}", epoch_utc(proc_.start_time)),
+        format!("Disk read           {}", bytes_short(proc_.read_bytes)),
+        format!("Disk write          {}", bytes_short(proc_.written_bytes)),
         format!(
-            "Файл                {}",
+            "File                {}",
             proc_
                 .exe
                 .as_ref()
                 .map_or_else(|| "—".to_owned(), |path| sanitize(&path.to_string_lossy()))
         ),
-        format!("Командная строка    {}", sanitize(proc_.display_cmd())),
+        format!("Command line        {}", sanitize(proc_.display_cmd())),
     ];
     box_panel(
         &format!("{} (PID {})", sanitize(&proc_.name), proc_.pid),
@@ -430,7 +431,7 @@ fn build_frame(
         lines.push(
             Line::colored(
                 Code::Yellow,
-                "Процессы не найдены — измените фильтр (f) или сбросьте его (c).",
+                "No processes found — change the filter (f) or reset it (c).",
             )
             .truncated(width, table::ascii()),
         );
@@ -466,7 +467,7 @@ fn build_frame(
     lines
 }
 
-/// Накладывает панель по центру кадра.
+/// Draws a panel centred over the frame.
 fn overlay(mut base: Vec<Line>, panel: Vec<Line>, width: usize, height: usize) -> Vec<Line> {
     if panel.len() + 2 >= height {
         return panel
@@ -502,7 +503,7 @@ fn draw(out: &mut io::Stdout, lines: &[Line], width: usize) -> io::Result<()> {
 }
 
 fn on_key(state: &mut State, key: KeyEvent) -> Option<Action> {
-    // Режим ввода строки фильтра поглощает все клавиши.
+    // The filter input mode swallows every key.
     if let Some(buffer) = state.input.as_mut() {
         match key.code {
             KeyCode::Enter => {
@@ -511,7 +512,7 @@ fn on_key(state: &mut State, key: KeyEvent) -> Option<Action> {
                 state.input = None;
                 state.selected = 0;
                 state.offset = 0;
-                state.say("Фильтр обновлён");
+                state.say("Filter updated");
             }
             KeyCode::Esc => state.input = None,
             KeyCode::Backspace => {
@@ -524,13 +525,13 @@ fn on_key(state: &mut State, key: KeyEvent) -> Option<Action> {
     }
 
     if state.pending_kill.is_some() {
-        if matches!(key.code, KeyCode::Char('y' | 'Y' | 'д')) {
+        if matches!(key.code, KeyCode::Char('y' | 'Y')) {
             if let Some((pid, _)) = state.pending_kill.take() {
                 return Some(Action::Kill(pid));
             }
         } else {
             state.pending_kill = None;
-            state.say("Отменено");
+            state.say("Cancelled");
         }
         return None;
     }
@@ -561,16 +562,16 @@ fn on_key(state: &mut State, key: KeyEvent) -> Option<Action> {
         KeyCode::Char('s') => {
             state.sort = state.sort.next();
             state.ascending = state.sort.default_ascending();
-            state.say(format!("Сортировка: {}", state.sort.label()));
+            state.say(format!("Sort: {}", state.sort.label()));
         }
         KeyCode::Char('r') => {
             state.ascending = !state.ascending;
             state.say(format!(
-                "Порядок: {}",
+                "Order: {}",
                 if state.ascending {
-                    "по возрастанию"
+                    "ascending"
                 } else {
-                    "по убыванию"
+                    "descending"
                 }
             ));
         }
@@ -578,31 +579,31 @@ fn on_key(state: &mut State, key: KeyEvent) -> Option<Action> {
         KeyCode::Char('c') => {
             state.filter = None;
             state.user = None;
-            state.say("Фильтр сброшен");
+            state.say("Filter cleared");
         }
         KeyCode::Char(' ') => {
             state.paused = !state.paused;
             state.say(if state.paused {
-                "Пауза"
+                "Paused"
             } else {
-                "Обновление возобновлено"
+                "Refresh resumed"
             });
         }
         KeyCode::Char('+' | '=') => {
             state.interval =
                 Duration::from_secs_f64((state.interval.as_secs_f64() + 0.5).min(60.0));
-            state.say(format!("Интервал: {:.1} с", state.interval.as_secs_f64()));
+            state.say(format!("Interval: {:.1} s", state.interval.as_secs_f64()));
         }
         KeyCode::Char('-') => {
             state.interval = Duration::from_secs_f64((state.interval.as_secs_f64() - 0.5).max(0.2));
-            state.say(format!("Интервал: {:.1} с", state.interval.as_secs_f64()));
+            state.say(format!("Interval: {:.1} s", state.interval.as_secs_f64()));
         }
         KeyCode::Char('a') => {
             state.with_cmd = !state.with_cmd;
             state.say(if state.with_cmd {
-                "Командные строки показаны"
+                "Command lines shown"
             } else {
-                "Командные строки скрыты"
+                "Command lines hidden"
             });
         }
         _ => {}
@@ -610,12 +611,10 @@ fn on_key(state: &mut State, key: KeyEvent) -> Option<Action> {
     None
 }
 
-/// Выполняет подкоманду `watch`.
+/// Runs the `watch` subcommand.
 pub fn run(args: WatchArgs) -> Result<()> {
     if !io::stdout().is_terminal() {
-        bail!(
-            "`watch` требует интерактивного терминала; для вывода в файл используйте `procman list`"
-        );
+        bail!("`watch` requires an interactive terminal; use `procman list` to write to a file");
     }
 
     let mut out = io::stdout();
@@ -667,23 +666,23 @@ pub fn run(args: WatchArgs) -> Result<()> {
             && state.overlay.is_none()
             && !state.help;
 
-        // Enter — панель с подробностями о выбранном процессе.
+        // Enter — a panel with details about the selected process.
         if plain_mode && key.code == KeyCode::Enter {
             match rows.get(state.selected) {
                 Some(proc_) => state.overlay = Some(process_panel(&snapshot, proc_, width)),
-                None => state.say("Нечего показать — список пуст"),
+                None => state.say("Nothing to show — the list is empty"),
             }
             continue;
         }
 
-        // x / Delete — предложить снять задачу.
+        // x / Delete — offer to end the task.
         if plain_mode && matches!(key.code, KeyCode::Delete | KeyCode::Char('x')) {
             match rows.get(state.selected) {
                 Some(proc_) if proc_.pid == std::process::id() => {
-                    state.say("Отказ: это сам procman");
+                    state.say("Refusing: this is procman itself");
                 }
                 Some(proc_) => state.pending_kill = Some((proc_.pid, proc_.name.clone())),
-                None => state.say("Ничего не выбрано"),
+                None => state.say("Nothing selected"),
             }
             continue;
         }
@@ -693,11 +692,11 @@ pub fn run(args: WatchArgs) -> Result<()> {
             Some(Action::Kill(pid)) => {
                 let report = collector.kill(pid, false);
                 state.say(match report.outcome {
-                    KillOutcome::Sent => format!("Процесс {pid} завершён"),
+                    KillOutcome::Sent => format!("Process {pid} ended"),
                     KillOutcome::Denied => {
-                        format!("Процесс {pid}: отказано — нужны права администратора")
+                        format!("Process {pid}: denied — administrator rights are required")
                     }
-                    KillOutcome::NotFound => format!("Процесс {pid} уже завершён"),
+                    KillOutcome::NotFound => format!("Process {pid} has already exited"),
                 });
                 snapshot = collector.refresh(false);
                 next_refresh = Instant::now() + state.interval;
@@ -707,7 +706,7 @@ pub fn run(args: WatchArgs) -> Result<()> {
     }
 
     drop(guard);
-    println!("procman: просмотр завершён");
+    println!("procman: watch session finished");
     Ok(())
 }
 
@@ -800,11 +799,11 @@ mod tests {
             let mut state = State::new(&args(500));
             let rows = visible_rows(&state, &snapshot);
             let frame = build_frame(&mut state, &snapshot, &rows, width, height);
-            assert_eq!(frame.len(), height, "высота кадра {width}x{height}");
+            assert_eq!(frame.len(), height, "frame height at {width}x{height}");
             for line in &frame {
                 assert!(
                     line.visible() <= width,
-                    "строка шире {width}: {:?}",
+                    "line is wider than {width}: {:?}",
                     line.plain_text()
                 );
             }
@@ -823,23 +822,23 @@ mod tests {
             frame
                 .iter()
                 .any(|line| line.plain_text().contains(&selected)),
-            "выбранный процесс должен быть в кадре"
+            "the selected process must be in the frame"
         );
-        assert!(state.offset > 0, "окно должно прокрутиться");
+        assert!(state.offset > 0, "the window must have scrolled");
     }
 
     #[test]
     fn empty_filter_shows_hint() {
         let snapshot = snapshot(10);
         let mut state = State::new(&args(100));
-        state.filter = Some("нет-такого-процесса".to_owned());
+        state.filter = Some("no-such-process".to_owned());
         let rows = visible_rows(&state, &snapshot);
         assert!(rows.is_empty());
         let frame = build_frame(&mut state, &snapshot, &rows, 80, 20);
         assert!(
             frame
                 .iter()
-                .any(|line| line.plain_text().contains("Процессы не найдены"))
+                .any(|line| line.plain_text().contains("No processes found"))
         );
         assert_eq!(frame.len(), 20);
     }
@@ -854,13 +853,17 @@ mod tests {
             let frame = build_frame(&mut state, &snapshot, &rows, width, 30);
             assert_eq!(frame.len(), 30);
             for line in &frame {
-                assert!(line.visible() <= width, "панель шире {width}");
+                assert!(
+                    line.visible() <= width,
+                    "panel is wider than {width}: {:?}",
+                    line.plain_text()
+                );
             }
             let panel = process_panel(&snapshot, &snapshot.procs[0], width);
             for line in panel {
                 assert!(
                     line.visible() <= width.max(30),
-                    "панель процесса шире {width}"
+                    "process panel is wider than {width}"
                 );
             }
         }
@@ -880,7 +883,7 @@ mod tests {
         on_key(&mut state, key(KeyCode::Char('a')));
         assert!(state.with_cmd);
 
-        // Фильтр: ввод, Backspace, Enter и Esc.
+        // Filter: typing, Backspace, Enter and Esc.
         on_key(&mut state, key(KeyCode::Char('f')));
         assert!(state.input.is_some());
         on_key(&mut state, key(KeyCode::Char('a')));
@@ -893,11 +896,11 @@ mod tests {
         on_key(&mut state, key(KeyCode::Esc));
         assert_eq!(state.filter.as_deref(), Some("a"));
 
-        // Подтверждение снятия задачи возвращает PID.
+        // Confirming a kill returns the PID.
         state.pending_kill = Some((4242, "victim.exe".to_owned()));
         match on_key(&mut state, key(KeyCode::Char('y'))) {
             Some(Action::Kill(pid)) => assert_eq!(pid, 4242),
-            _ => panic!("ожидалось подтверждение снятия задачи"),
+            _ => panic!("a kill confirmation was expected"),
         }
         state.pending_kill = Some((4242, "victim.exe".to_owned()));
         assert!(on_key(&mut state, key(KeyCode::Char('n'))).is_none());

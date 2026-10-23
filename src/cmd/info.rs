@@ -1,4 +1,4 @@
-//! `procman info` — подробности об одном процессе (аналог окна «Свойства»).
+//! `procman info` — details about a single process (the Properties window).
 
 use anyhow::Result;
 use clap::Args;
@@ -15,15 +15,15 @@ use crate::util::{bar, bytes_long, bytes_short, duration, epoch_utc, sanitize, t
 
 #[derive(Args, Debug)]
 pub struct InfoArgs {
-    /// PID (число) или имя процесса
-    #[arg(value_name = "ЦЕЛЬ")]
+    /// PID (a number) or process name
+    #[arg(value_name = "TARGET")]
     pub target: String,
-    /// Вывести данные в формате JSON
+    /// Print the data as JSON
     #[arg(long)]
     pub json: bool,
 }
 
-/// Строит цепочку «родитель ← родитель родителя ← …».
+/// Builds the chain `parent ← parent of the parent ← …`.
 fn parent_chain(snapshot: &Snapshot, pid: u32) -> Option<String> {
     let mut parts = Vec::new();
     let mut current = Some(pid);
@@ -95,7 +95,7 @@ fn json_info(snapshot: &Snapshot, proc_: &Proc) -> String {
     ])
 }
 
-/// Выполняет подкоманду `info`.
+/// Runs the `info` subcommand.
 pub fn run(args: InfoArgs) -> Result<()> {
     let mut collector = Collector::new();
     let snapshot = collector.refresh(true);
@@ -125,7 +125,7 @@ pub fn run(args: InfoArgs) -> Result<()> {
     };
     let bar_width = 16;
     println!(
-        "CPU {} {:.2}%   ПАМЯТЬ {} {} ({:.1}% ОЗУ)",
+        "CPU {} {:.2}%   MEMORY {} {} ({:.1}% of RAM)",
         ansi::paint(ansi::load_code(cpu), &bar(cpu, bar_width, table::ascii())),
         cpu,
         ansi::paint(
@@ -139,86 +139,82 @@ pub fn run(args: InfoArgs) -> Result<()> {
 
     let mut fields: Vec<(String, String, Style)> = vec![
         (
-            "Идентификатор (PID)".to_owned(),
+            "Process ID (PID)".to_owned(),
             proc_.pid.to_string(),
             Style::Plain,
         ),
         (
-            "Родительский процесс".to_owned(),
+            "Parent process".to_owned(),
             parent.map_or_else(
-                || "не найден".to_owned(),
+                || "not found".to_owned(),
                 |parent| format!("{} (PID {})", parent.name, parent.pid),
             ),
             Style::Plain,
         ),
     ];
     if let Some(chain) = parent_chain(&snapshot, proc_.pid) {
-        fields.push(("Цепочка процессов".to_owned(), chain, Style::Dim));
+        fields.push(("Process chain".to_owned(), chain, Style::Dim));
     }
     fields.extend([
         (
-            "Дочерних процессов".to_owned(),
+            "Child processes".to_owned(),
             proc_.children.to_string(),
             Style::Plain,
         ),
         (
-            "Всего в ветке".to_owned(),
-            format!("{} (включая дочерние)", thousands(descendants as u64)),
+            "Total in branch".to_owned(),
+            format!("{} (children included)", thousands(descendants as u64)),
             Style::Dim,
         ),
         (
-            "Состояние".to_owned(),
+            "State".to_owned(),
             status_text(&proc_.status).to_owned(),
             status_style(&proc_.status),
         ),
-        ("Пользователь".to_owned(), proc_.user.clone(), Style::Plain),
+        ("User".to_owned(), proc_.user.clone(), Style::Plain),
         (
-            "Загрузка CPU".to_owned(),
+            "CPU usage".to_owned(),
             format!(
-                "{:.2}% от всех ядер ({:.1}% одного ядра)",
+                "{:.2}% of all cores ({:.1}% of one core)",
                 proc_.cpu, proc_.cpu_core
             ),
             Style::for_load(proc_.cpu),
         ),
         (
-            "Память (RSS)".to_owned(),
+            "Memory (RSS)".to_owned(),
             bytes_long(proc_.mem),
             Style::Plain,
         ),
         (
-            "Виртуальная память".to_owned(),
+            "Virtual memory".to_owned(),
             bytes_long(proc_.virt),
             Style::Plain,
         ),
         (
-            "Время работы".to_owned(),
+            "Run time".to_owned(),
             duration(proc_.run_time),
             Style::Plain,
         ),
         (
-            "Запущен (UTC)".to_owned(),
-            format!(
-                "{} ({} с назад)",
-                epoch_utc(proc_.start_time),
-                proc_.run_time
-            ),
+            "Started (UTC)".to_owned(),
+            format!("{} ({} s ago)", epoch_utc(proc_.start_time), proc_.run_time),
             Style::Plain,
         ),
         (
-            "Прочитано с диска".to_owned(),
+            "Read from disk".to_owned(),
             bytes_short(proc_.read_bytes),
             Style::Plain,
         ),
         (
-            "Записано на диск".to_owned(),
+            "Written to disk".to_owned(),
             bytes_short(proc_.written_bytes),
             Style::Plain,
         ),
     ]);
 
     let cols = vec![
-        Col::new("ПАРАМЕТР", Align::Left, Some(26)).min_width(18),
-        Col::new("ЗНАЧЕНИЕ", Align::Left, None)
+        Col::new("PARAMETER", Align::Left, Some(26)).min_width(18),
+        Col::new("VALUE", Align::Left, None)
             .min_width(20)
             .flexible(),
     ];
@@ -236,11 +232,11 @@ pub fn run(args: InfoArgs) -> Result<()> {
     println!();
     for (label, value) in [
         (
-            "Исполняемый файл",
+            "Executable",
             proc_.exe.as_ref().map(|p| p.to_string_lossy().into_owned()),
         ),
         (
-            "Рабочий каталог",
+            "Working directory",
             proc_.cwd.as_ref().map(|p| p.to_string_lossy().into_owned()),
         ),
     ] {
@@ -249,22 +245,18 @@ pub fn run(args: InfoArgs) -> Result<()> {
             None => println!(
                 "{} {}",
                 ansi::dim(&format!("{label}:")),
-                ansi::grey("недоступно")
+                ansi::grey("unavailable")
             ),
         }
     }
     if proc_.cmd.is_empty() {
         println!(
             "{} {}",
-            ansi::dim("Командная строка:"),
-            ansi::grey("недоступна")
+            ansi::dim("Command line:"),
+            ansi::grey("unavailable")
         );
     } else {
-        println!(
-            "{} {}",
-            ansi::dim("Командная строка:"),
-            sanitize(&proc_.cmd)
-        );
+        println!("{} {}", ansi::dim("Command line:"), sanitize(&proc_.cmd));
     }
     Ok(())
 }

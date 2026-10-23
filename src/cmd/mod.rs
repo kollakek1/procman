@@ -1,4 +1,4 @@
-//! Подкоманды CLI.
+//! CLI subcommands.
 
 pub mod info;
 pub mod kill;
@@ -13,7 +13,7 @@ use anyhow::{Result, bail};
 
 use crate::model::{Proc, Snapshot, SortBy};
 
-/// Сравнивает два процесса по выбранному ключу (с выравниванием порядка).
+/// Compares two processes by the chosen key (applying the sort direction).
 pub fn compare_procs(a: &Proc, b: &Proc, by: SortBy, ascending: bool) -> Ordering {
     let order = match by {
         SortBy::Cpu => a.cpu.partial_cmp(&b.cpu).unwrap_or(Ordering::Equal),
@@ -25,19 +25,19 @@ pub fn compare_procs(a: &Proc, b: &Proc, by: SortBy, ascending: bool) -> Orderin
         SortBy::Read => a.read_bytes.cmp(&b.read_bytes),
         SortBy::Write => a.written_bytes.cmp(&b.written_bytes),
     };
-    // Стабильный вторичный ключ: по памяти, затем по PID.
+    // Stable secondary keys: memory first, then PID.
     let order = order
         .then_with(|| a.mem.cmp(&b.mem))
         .then_with(|| a.pid.cmp(&b.pid));
     if ascending { order } else { order.reverse() }
 }
 
-/// Сортирует процессы. `ascending = false` — по убыванию (как в диспетчере задач).
+/// Sorts processes. `ascending = false` means descending, as in Task Manager.
 pub fn sort_procs(procs: &mut [Proc], by: SortBy, ascending: bool) {
     procs.sort_by(|a, b| compare_procs(a, b, by, ascending));
 }
 
-/// Фильтрует процессы по подстроке и/или пользователю.
+/// Filters processes by a substring and/or an owner.
 pub fn filter_procs(procs: &mut Vec<Proc>, needle: Option<&str>, user: Option<&str>) {
     if let Some(needle) = needle {
         let needle = needle.trim().to_lowercase();
@@ -53,10 +53,10 @@ pub fn filter_procs(procs: &mut Vec<Proc>, needle: Option<&str>, user: Option<&s
     }
 }
 
-/// Ищет процессы по строке-цели: сначала как PID, затем как точное имя,
-/// затем по подстроке в имени и лишь в последнюю очередь — по командной строке,
-/// пользователю или номеру PID. Такой порядок не даёт случайно поймать процесс,
-/// в командной строке которого просто упомянуто искомое слово.
+/// Resolves a target string to processes: first as a PID, then as an exact
+/// name, then as a name substring, and only last as a command line, owner or
+/// PID substring. This order avoids accidentally matching a process that
+/// merely mentions the searched word in its command line.
 pub fn resolve_targets(snapshot: &Snapshot, target: &str) -> Vec<Proc> {
     let trimmed = target.trim();
     if let Ok(pid) = trimmed.parse::<u32>() {
@@ -90,17 +90,17 @@ pub fn resolve_targets(snapshot: &Snapshot, target: &str) -> Vec<Proc> {
         .collect()
 }
 
-/// Разбирает строку-цель, требуя ровно одно совпадение (для `info`).
+/// Resolves a target, expecting a single answer (used by `info`).
 pub fn resolve_one(snapshot: &Snapshot, target: &str) -> Result<Proc> {
     let mut found = resolve_targets(snapshot, target);
     if found.is_empty() {
-        bail!("процесс «{target}» не найден");
+        bail!("process \"{target}\" not found");
     }
     found.sort_by_key(|p| p.pid);
     if found.len() == 1 {
         return Ok(found.remove(0));
     }
-    // Если совпадение неоднозначно, предпочитаем самый «тяжёлый» процесс.
+    // If the match is ambiguous, prefer the heaviest process.
     found.sort_by_key(|proc_| std::cmp::Reverse(proc_.mem));
     let chosen = found.remove(0);
     let others: Vec<String> = found
@@ -109,14 +109,14 @@ pub fn resolve_one(snapshot: &Snapshot, target: &str) -> Result<Proc> {
         .map(|p| format!("{} (PID {})", p.name, p.pid))
         .collect();
     eprintln!(
-        "Найдено несколько совпадений, показан самый крупный: {} (PID {}).",
+        "Several matches found, showing the largest one: {} (PID {}).",
         chosen.name, chosen.pid
     );
-    eprintln!("Другие совпадения: {}", others.join(", "));
+    eprintln!("Other matches: {}", others.join(", "));
     Ok(chosen)
 }
 
-/// Собирает PID процесса и всех его потомков (рекурсивно).
+/// Collects the PID of a process and of all its descendants (recursively).
 pub fn collect_descendants(snapshot: &Snapshot, root: u32) -> Vec<u32> {
     let mut result = vec![root];
     let mut cursor = 0;
@@ -204,7 +204,7 @@ mod tests {
         assert_eq!(resolve_targets(&snap, "42")[0].pid, 42);
         assert_eq!(resolve_targets(&snap, "svc")[0].pid, 42);
         assert_eq!(resolve_targets(&snap, "extra")[0].pid, 7);
-        assert!(resolve_targets(&snap, "нет-такого").is_empty());
+        assert!(resolve_targets(&snap, "no-such-thing").is_empty());
     }
 
     #[test]

@@ -1,15 +1,15 @@
-//! Форматирование значений для терминала: размеры, время, полоски загрузки.
+//! Value formatting for the terminal: sizes, time, load bars.
 //!
-//! Здесь нет внешних зависимостей, поэтому календарные функции считают дату
-//! самостоятельно (алгоритм Хауарда Хиннанта «`civil_from_days`»), в UTC.
+//! There are no external dependencies here, so the calendar helpers compute
+//! dates themselves (Howard Hinnant's `civil_from_days` algorithm), in UTC.
 
-/// Количество «символов» строки (не байт) — важно для выравнивания таблиц
-/// с кириллицей и рамками.
+/// Number of characters in a string (not bytes) — important for aligning
+/// tables that contain wide characters and box drawing.
 pub fn char_len(text: &str) -> usize {
     text.chars().count()
 }
 
-/// Обрезает строку до `width` символов, добавляя многоточие.
+/// Truncates a string to `width` characters, appending an ellipsis.
 pub fn truncate(text: &str, width: usize, ascii: bool) -> String {
     if width == 0 {
         return String::new();
@@ -25,7 +25,7 @@ pub fn truncate(text: &str, width: usize, ascii: bool) -> String {
     out
 }
 
-/// Дополняет строку пробелами справа до `width` символов.
+/// Pads a string with spaces on the right up to `width` characters.
 pub fn pad_right(text: &str, width: usize) -> String {
     let len = char_len(text);
     if len >= width {
@@ -34,7 +34,7 @@ pub fn pad_right(text: &str, width: usize) -> String {
     format!("{text}{}", " ".repeat(width - len))
 }
 
-/// Дополняет строку пробелами слева до `width` символов.
+/// Pads a string with spaces on the left up to `width` characters.
 pub fn pad_left(text: &str, width: usize) -> String {
     let len = char_len(text);
     if len >= width {
@@ -43,8 +43,8 @@ pub fn pad_left(text: &str, width: usize) -> String {
     format!("{}{text}", " ".repeat(width - len))
 }
 
-/// Убирает управляющие символы (имена и командные строки процессов могут
-/// содержать переводы строк и табуляции, которые ломают таблицу).
+/// Removes control characters (process names and command lines may contain
+/// newlines and tabs, which would break a table).
 pub fn sanitize(text: &str) -> String {
     text.chars()
         .map(|c| if c.is_control() { ' ' } else { c })
@@ -55,7 +55,7 @@ pub fn sanitize(text: &str) -> String {
 }
 
 fn split_bytes(bytes: u64) -> (f64, usize) {
-    const UNITS: [&str; 6] = ["Б", "КиБ", "МиБ", "ГиБ", "ТиБ", "ПиБ"];
+    const UNITS: [&str; 6] = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
     let mut value = bytes as f64;
     let mut unit = 0;
     while value >= 1024.0 && unit + 1 < UNITS.len() {
@@ -65,9 +65,7 @@ fn split_bytes(bytes: u64) -> (f64, usize) {
     (value, unit)
 }
 
-/// Компактный размер для таблиц: `512K`, `1.2G`, `0`.
-///
-/// Единицы латиницей — как в диспетчере задач (`512M`, `1.2G`).
+/// Compact size for tables: `512K`, `1.2G`, `0`.
 pub fn bytes_short(bytes: u64) -> String {
     const SHORT: [&str; 6] = ["B", "K", "M", "G", "T", "P"];
     if bytes == 0 {
@@ -86,9 +84,9 @@ pub fn bytes_short(bytes: u64) -> String {
     }
 }
 
-/// Подробный размер для сводок: `1.23 ГиБ`.
+/// Detailed size for summaries: `1.23 GiB`.
 pub fn bytes_long(bytes: u64) -> String {
-    const UNITS: [&str; 6] = ["Б", "КиБ", "МиБ", "ГиБ", "ТиБ", "ПиБ"];
+    const UNITS: [&str; 6] = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
     let (value, unit) = split_bytes(bytes);
     if unit == 0 {
         format!("{bytes} {}", UNITS[0])
@@ -97,27 +95,27 @@ pub fn bytes_long(bytes: u64) -> String {
     }
 }
 
-/// Разделяет разряды пробелом: `1234567` -> `1 234 567`.
+/// Groups digits in threes: `1234567` -> `1,234,567`.
 pub fn thousands(value: u64) -> String {
     let digits = value.to_string();
     let mut out = String::with_capacity(digits.len() + digits.len() / 3);
     for (idx, ch) in digits.chars().enumerate() {
         if idx > 0 && (digits.len() - idx) % 3 == 0 {
-            out.push(' ');
+            out.push(',');
         }
         out.push(ch);
     }
     out
 }
 
-/// Длительность в формате диспетчера задач: `0:42`, `1:02:03`, `3д 04:05:06`.
+/// Duration in the task manager style: `0:42`, `1:02:03`, `3d 04:05:06`.
 pub fn duration(secs: u64) -> String {
     let days = secs / 86_400;
     let hours = (secs % 86_400) / 3_600;
     let minutes = (secs % 3_600) / 60;
     let seconds = secs % 60;
     if days > 0 {
-        format!("{days}д {hours:02}:{minutes:02}:{seconds:02}")
+        format!("{days}d {hours:02}:{minutes:02}:{seconds:02}")
     } else if hours > 0 {
         format!("{hours}:{minutes:02}:{seconds:02}")
     } else {
@@ -125,17 +123,12 @@ pub fn duration(secs: u64) -> String {
     }
 }
 
-/// Человеческий аптайм: `2д 5ч 3мин`.
+/// Human readable uptime: `2d 5h 3m`.
 pub fn uptime(secs: u64) -> String {
     let days = secs / 86_400;
     let hours = (secs % 86_400) / 3_600;
     let minutes = (secs % 3_600) / 60;
-    let parts = [
-        (days, "д"),
-        (hours, "ч"),
-        (minutes, "мин"),
-        (secs % 60, "с"),
-    ];
+    let parts = [(days, "d"), (hours, "h"), (minutes, "m"), (secs % 60, "s")];
     let text = parts
         .iter()
         .filter(|(value, _)| *value > 0)
@@ -144,29 +137,19 @@ pub fn uptime(secs: u64) -> String {
         .collect::<Vec<_>>()
         .join(" ");
     if text.is_empty() {
-        "0с".to_owned()
+        "0s".to_owned()
     } else {
         text
     }
 }
 
-/// Русское согласование числительного: `1 процесс`, `2 процесса`, `5 процессов`.
-pub fn plural(count: u64, one: &str, few: &str, many: &str) -> String {
-    let mod100 = count % 100;
-    let mod10 = count % 10;
-    let form = if (11..=14).contains(&mod100) {
-        many
-    } else if mod10 == 1 {
-        one
-    } else if (2..=4).contains(&mod10) {
-        few
-    } else {
-        many
-    };
+/// English plural agreement: `1 process`, `2 processes`.
+pub fn plural(count: u64, singular: &str, plural: &str) -> String {
+    let form = if count == 1 { singular } else { plural };
     format!("{count} {form}")
 }
 
-/// Полоска заполнения: `████░░░░`.
+/// Fill bar: `████░░░░`.
 pub fn bar(percent: f32, width: usize, ascii: bool) -> String {
     let ratio = (percent / 100.0).clamp(0.0, 1.0);
     let filled = (ratio * width as f32).round() as usize;
@@ -179,7 +162,7 @@ pub fn bar(percent: f32, width: usize, ascii: bool) -> String {
     )
 }
 
-/// Спакрлайн из блоков разной высоты для истории загрузки.
+/// Sparkline built from blocks of different height, for the load history.
 pub fn sparkline(values: &[f32], ascii: bool) -> String {
     const BLOCKS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
     const ASCII: [char; 8] = ['.', ':', '-', '=', '+', '*', '#', '@'];
@@ -194,7 +177,7 @@ pub fn sparkline(values: &[f32], ascii: bool) -> String {
         .collect()
 }
 
-/// Дата и время из Unix-времени (UTC), формат `2026-10-23 14:05:33`.
+/// Date and time from a Unix timestamp (UTC), formatted as `2026-10-23 14:05:33`.
 pub fn epoch_utc(secs: u64) -> String {
     let days = (secs / 86_400) as i64;
     let rem = secs % 86_400;
@@ -207,7 +190,7 @@ pub fn epoch_utc(secs: u64) -> String {
     )
 }
 
-/// Дни от 1970-01-01 -> (год, месяц, день). Алгоритм Хиннанта.
+/// Days since 1970-01-01 -> (year, month, day). Hinnant's algorithm.
 fn civil_from_days(days: i64) -> (i64, u32, u32) {
     let z = days + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
@@ -221,7 +204,7 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
     (if month <= 2 { year + 1 } else { year }, month, day)
 }
 
-/// Текущее время в секундах Unix.
+/// Current time as a Unix timestamp.
 pub fn unix_now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -234,18 +217,10 @@ mod tests {
 
     #[test]
     fn plural_forms() {
-        assert_eq!(plural(1, "процесс", "процесса", "процессов"), "1 процесс");
-        assert_eq!(plural(2, "процесс", "процесса", "процессов"), "2 процесса");
-        assert_eq!(plural(5, "процесс", "процесса", "процессов"), "5 процессов");
-        assert_eq!(
-            plural(11, "процесс", "процесса", "процессов"),
-            "11 процессов"
-        );
-        assert_eq!(plural(21, "процесс", "процесса", "процессов"), "21 процесс");
-        assert_eq!(
-            plural(112, "процесс", "процесса", "процессов"),
-            "112 процессов"
-        );
+        assert_eq!(plural(0, "process", "processes"), "0 processes");
+        assert_eq!(plural(1, "process", "processes"), "1 process");
+        assert_eq!(plural(2, "process", "processes"), "2 processes");
+        assert_eq!(plural(21, "process", "processes"), "21 processes");
     }
 
     #[test]
@@ -253,23 +228,23 @@ mod tests {
         assert_eq!(bytes_short(0), "0");
         assert_eq!(bytes_short(1024), "1.00K");
         assert_eq!(bytes_short(1024 * 1024 * 512), "512M");
-        assert_eq!(bytes_long(1024 * 1024 * 1024), "1.00 ГиБ");
+        assert_eq!(bytes_long(1024 * 1024 * 1024), "1.00 GiB");
     }
 
     #[test]
     fn thousand_separators() {
         assert_eq!(thousands(7), "7");
-        assert_eq!(thousands(1234), "1 234");
-        assert_eq!(thousands(1_234_567_890), "1 234 567 890");
+        assert_eq!(thousands(1234), "1,234");
+        assert_eq!(thousands(1_234_567_890), "1,234,567,890");
     }
 
     #[test]
     fn durations() {
         assert_eq!(duration(5), "0:05");
         assert_eq!(duration(3_725), "1:02:05");
-        assert_eq!(duration(90_061), "1д 01:01:01");
-        assert_eq!(uptime(0), "0с");
-        assert_eq!(uptime(90_061), "1д 1ч 1мин");
+        assert_eq!(duration(90_061), "1d 01:01:01");
+        assert_eq!(uptime(0), "0s");
+        assert_eq!(uptime(90_061), "1d 1h 1m");
     }
 
     #[test]
@@ -281,10 +256,10 @@ mod tests {
 
     #[test]
     fn truncation_is_char_aware() {
-        assert_eq!(truncate("привет", 10, false), "привет");
-        assert_eq!(truncate("привет мир", 6, false), "приве…");
-        assert_eq!(truncate("привет мир", 6, true), "приве~");
-        assert_eq!(char_len("привет"), 6);
+        assert_eq!(truncate("hello", 10, false), "hello");
+        assert_eq!(truncate("hello world", 6, false), "hello…");
+        assert_eq!(truncate("hello world", 6, true), "hello~");
+        assert_eq!(char_len("héllo"), 5);
     }
 
     #[test]

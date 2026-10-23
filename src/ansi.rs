@@ -1,25 +1,25 @@
-//! Минимальная ANSI-раскраска без внешних зависимостей.
+//! Minimal ANSI colouring without external dependencies.
 //!
-//! Цвет включается автоматически, если `stdout` — терминал и не задан `NO_COLOR`.
-//! Принудительно включить можно переменной `CLICOLOR_FORCE` или флагом `--no-color`
-//! (выключает).
+//! Colour is enabled automatically when `stdout` is a terminal and `NO_COLOR`
+//! is not set. It can be forced on with the `CLICOLOR_FORCE` environment
+//! variable or turned off with the `--no-color` flag.
 
 use std::io::IsTerminal;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 static ENABLED: AtomicBool = AtomicBool::new(false);
 
-/// Включает или выключает цветной вывод.
+/// Enables or disables coloured output.
 pub fn set_enabled(value: bool) {
     ENABLED.store(value, Ordering::Relaxed);
 }
 
-/// Текущее состояние раскраски.
+/// Current colouring state.
 pub fn enabled() -> bool {
     ENABLED.load(Ordering::Relaxed)
 }
 
-/// Стоит ли включать цвет: `NO_COLOR` не задан и `stdout` подключён к терминалу.
+/// Whether colour should be used: `NO_COLOR` unset and `stdout` is a terminal.
 pub fn detect() -> bool {
     if std::env::var_os("NO_COLOR").is_some() {
         return false;
@@ -30,7 +30,7 @@ pub fn detect() -> bool {
     std::io::stdout().is_terminal()
 }
 
-/// Коды ANSI, которые использует программа.
+/// ANSI codes used by the program.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Code {
     Bold = 1,
@@ -45,7 +45,7 @@ pub enum Code {
     BrightYellow = 93,
 }
 
-/// Оборачивает текст ANSI-кодом (если цвет включён).
+/// Wraps text in an ANSI code (when colour is enabled).
 pub fn paint(code: Code, text: &str) -> String {
     if enabled() {
         format!("\x1b[{}m{}\x1b[0m", code as u8, text)
@@ -54,7 +54,7 @@ pub fn paint(code: Code, text: &str) -> String {
     }
 }
 
-/// Инвертирует цвета — используется для выделенной строки в `watch`.
+/// Inverts colours — used for the selected row in `watch`.
 pub fn reverse(text: &str) -> String {
     if enabled() {
         format!("\x1b[7m{text}\x1b[0m")
@@ -63,7 +63,7 @@ pub fn reverse(text: &str) -> String {
     }
 }
 
-/// Цвет для уровня нагрузки: зелёный < 50%, жёлтый < 80%, иначе красный.
+/// Colour for a load level: green below 50%, yellow below 80%, red above.
 pub fn load_code(percent: f32) -> Code {
     if percent >= 80.0 {
         Code::BrightRed

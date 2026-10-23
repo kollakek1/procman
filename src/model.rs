@@ -1,46 +1,46 @@
-//! Модель данных: снимок системы и процессов.
+//! Data model: a snapshot of the system and its processes.
 
 use std::path::PathBuf;
 
 use clap::ValueEnum;
 
-/// Ключи сортировки таблицы процессов.
+/// Sort keys for the process table.
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SortBy {
-    /// Загрузка процессора
+    /// CPU usage
     Cpu,
-    /// Потребление памяти
+    /// Memory usage
     Mem,
-    /// Идентификатор процесса
+    /// Process identifier
     Pid,
-    /// Имя процесса
+    /// Process name
     Name,
-    /// Пользователь
+    /// Owner
     User,
-    /// Время работы
+    /// Run time
     Run,
-    /// Прочитано с диска
+    /// Bytes read from disk
     Read,
-    /// Записано на диск
+    /// Bytes written to disk
     Write,
 }
 
 impl SortBy {
-    /// Подпись для интерфейса `watch`.
+    /// Label for the `watch` interface.
     pub fn label(self) -> &'static str {
         match self {
             Self::Cpu => "CPU",
-            Self::Mem => "ПАМЯТЬ",
+            Self::Mem => "MEMORY",
             Self::Pid => "PID",
-            Self::Name => "ИМЯ",
-            Self::User => "ПОЛЬЗОВАТЕЛЬ",
-            Self::Run => "ВРЕМЯ",
-            Self::Read => "ЧТЕНИЕ",
-            Self::Write => "ЗАПИСЬ",
+            Self::Name => "NAME",
+            Self::User => "USER",
+            Self::Run => "TIME",
+            Self::Read => "READ",
+            Self::Write => "WRITE",
         }
     }
 
-    /// Следующий ключ по кругу — для переключения в `watch` клавишей `s`.
+    /// The next key in the cycle — used by the `s` key of `watch`.
     pub fn next(self) -> Self {
         match self {
             Self::Cpu => Self::Mem,
@@ -54,26 +54,26 @@ impl SortBy {
         }
     }
 
-    /// По умолчанию числовые показатели сортируются по убыванию,
-    /// а идентификаторы и имена — по возрастанию.
+    /// Numeric values are sorted descending by default, while identifiers and
+    /// names are sorted ascending.
     pub fn default_ascending(self) -> bool {
         matches!(self, Self::Pid | Self::Name | Self::User)
     }
 }
 
-/// Один процесс в удобном для печати виде.
+/// A single process in a print-friendly shape.
 #[derive(Clone, Debug)]
 pub struct Proc {
     pub pid: u32,
     pub ppid: Option<u32>,
     pub name: String,
-    /// Загрузка CPU в процентах от суммарной мощности всех ядер (как в диспетчере задач).
+    /// CPU usage as a share of all cores (the way Task Manager counts it).
     pub cpu: f32,
-    /// Загрузка CPU в процентах одного ядра (сырое значение `sysinfo`).
+    /// CPU usage as a share of a single core (the raw `sysinfo` value).
     pub cpu_core: f32,
-    /// Резидентная память, байты.
+    /// Resident memory in bytes.
     pub mem: u64,
-    /// Виртуальная память, байты.
+    /// Virtual memory in bytes.
     pub virt: u64,
     pub status: String,
     pub user: String,
@@ -88,7 +88,7 @@ pub struct Proc {
 }
 
 impl Proc {
-    /// Есть ли подстрока в имени, командной строке, PID или пользователе.
+    /// Whether the needle occurs in the name, command line, PID or owner.
     pub fn matches(&self, needle_lower: &str) -> bool {
         self.name.to_lowercase().contains(needle_lower)
             || self.cmd.to_lowercase().contains(needle_lower)
@@ -96,7 +96,7 @@ impl Proc {
             || self.pid.to_string().contains(needle_lower)
     }
 
-    /// Командная строка либо имя, если командная строка недоступна.
+    /// The command line, or the name when the command line is unavailable.
     pub fn display_cmd(&self) -> &str {
         if self.cmd.is_empty() {
             &self.name
@@ -106,7 +106,7 @@ impl Proc {
     }
 }
 
-/// Информация о ядре процессора.
+/// Information about a CPU core.
 #[derive(Clone, Debug)]
 pub struct CoreInfo {
     pub name: String,
@@ -114,7 +114,7 @@ pub struct CoreInfo {
     pub frequency: u64,
 }
 
-/// Загрузка процессора.
+/// CPU load.
 #[derive(Clone, Debug, Default)]
 pub struct CpuInfo {
     pub brand: String,
@@ -122,7 +122,7 @@ pub struct CpuInfo {
     pub cores: Vec<CoreInfo>,
 }
 
-/// Оперативная память и файл подкачки.
+/// RAM and swap.
 #[derive(Clone, Debug, Default)]
 pub struct MemInfo {
     pub total: u64,
@@ -151,7 +151,7 @@ impl MemInfo {
     }
 }
 
-/// Общие сведения о машине.
+/// General facts about the machine.
 #[derive(Clone, Debug, Default)]
 pub struct HostInfo {
     pub os_name: Option<String>,
@@ -165,7 +165,7 @@ pub struct HostInfo {
     pub load_avg: (f64, f64, f64),
 }
 
-/// Диск.
+/// A disk.
 #[derive(Clone, Debug)]
 pub struct DiskInfo {
     pub name: String,
@@ -190,7 +190,7 @@ impl DiskInfo {
     }
 }
 
-/// Сетевой интерфейс: накопленные объёмы и дельты с прошлого обновления.
+/// A network interface: totals plus deltas since the previous refresh.
 #[derive(Clone, Debug)]
 pub struct NetInfo {
     pub interface: String,
@@ -202,7 +202,7 @@ pub struct NetInfo {
     pub packets_transmitted: u64,
 }
 
-/// Полный снимок состояния системы на момент выборки.
+/// A full snapshot of the system taken at one moment.
 #[derive(Clone, Debug, Default)]
 pub struct Snapshot {
     pub host: HostInfo,
@@ -211,17 +211,17 @@ pub struct Snapshot {
     pub disks: Vec<DiskInfo>,
     pub nets: Vec<NetInfo>,
     pub procs: Vec<Proc>,
-    /// Время между двумя последовательными обновлениями (для расчёта скоростей).
+    /// Time between two consecutive refreshes (used to compute rates).
     pub elapsed: f64,
 }
 
 impl Snapshot {
-    /// Ищет процесс по PID.
+    /// Looks up a process by PID.
     pub fn by_pid(&self, pid: u32) -> Option<&Proc> {
         self.procs.iter().find(|p| p.pid == pid)
     }
 
-    /// Процессы с указанным именем (без учёта регистра).
+    /// Processes with the given name (case insensitive).
     pub fn by_name(&self, name: &str) -> Vec<&Proc> {
         let needle = name.to_lowercase();
         self.procs
@@ -230,12 +230,12 @@ impl Snapshot {
             .collect()
     }
 
-    /// Суммарная загрузка CPU по всем процессам.
+    /// Total CPU usage across all processes.
     pub fn total_cpu(&self) -> f32 {
         self.procs.iter().map(|p| p.cpu).sum()
     }
 
-    /// Суммарная память процессов.
+    /// Total memory used by the processes.
     pub fn total_mem(&self) -> u64 {
         self.procs.iter().map(|p| p.mem).sum()
     }

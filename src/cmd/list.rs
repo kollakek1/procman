@@ -1,4 +1,4 @@
-//! `procman list` — таблица процессов (аналог вкладки «Процессы»).
+//! `procman list` — the process table (the Processes tab of Task Manager).
 
 use std::fmt::Write as _;
 
@@ -15,47 +15,47 @@ use crate::util::{bar, bytes_long, bytes_short, duration, thousands};
 
 #[derive(Args, Debug)]
 pub struct ListArgs {
-    /// Ключ сортировки
+    /// Sort key
     #[arg(short, long, value_enum, default_value_t = SortBy::Cpu)]
     pub sort: SortBy,
-    /// Показать только N самых «тяжёлых» процессов
+    /// Show only the N heaviest processes
     #[arg(short = 'n', long, value_name = "N")]
     pub top: Option<usize>,
-    /// Фильтр по имени, командной строке, PID или пользователю
-    #[arg(short, long, value_name = "ТЕКСТ")]
+    /// Filter by name, command line, PID or user
+    #[arg(short, long, value_name = "TEXT")]
     pub filter: Option<String>,
-    /// Только процессы указанного пользователя
-    #[arg(short, long, value_name = "ИМЯ")]
+    /// Only processes owned by this user
+    #[arg(short, long, value_name = "NAME")]
     pub user: Option<String>,
-    /// Сортировать по возрастанию
+    /// Sort ascending
     #[arg(long)]
     pub asc: bool,
-    /// Показать командные строки процессов
+    /// Show process command lines
     #[arg(short = 'c', long)]
     pub cmd: bool,
-    /// Вывести данные в формате JSON
+    /// Print the data as JSON
     #[arg(long)]
     pub json: bool,
-    /// Не печатать шапку со сводкой по системе
+    /// Do not print the system summary header
     #[arg(long)]
     pub no_header: bool,
 }
 
-/// Русская подпись состояния процесса.
+/// Human readable process state.
 pub fn status_text(status: &str) -> &'static str {
     match status {
-        "Run" | "Running" => "Работает",
-        "Sleep" | "Idle" => "Ожидает",
-        "Stop" => "Остановлен",
-        "Zombie" | "Dead" => "Зомби",
-        "UninterruptibleDiskSleep" => "Ожид. диск",
-        "Waking" | "Wakekill" | "Parked" | "LockBlocked" => "Пробуждение",
-        "Tracing" | "Unknown" => "Неизвестно",
-        _ => "Другое",
+        "Run" | "Running" => "Running",
+        "Sleep" | "Idle" => "Sleeping",
+        "Stop" => "Stopped",
+        "Zombie" | "Dead" => "Zombie",
+        "UninterruptibleDiskSleep" => "Disk wait",
+        "Waking" | "Wakekill" | "Parked" | "LockBlocked" => "Waking",
+        "Tracing" | "Unknown" => "Unknown",
+        _ => "Other",
     }
 }
 
-/// Стиль для состояния процесса.
+/// A style for a process state.
 pub fn status_style(status: &str) -> Style {
     match status {
         "Run" | "Running" => Style::BrightGreen,
@@ -65,20 +65,20 @@ pub fn status_style(status: &str) -> Style {
     }
 }
 
-/// Таблица процессов — общая для `list` и `watch`.
+/// The process table — shared by `list` and `watch`.
 pub fn process_table(procs: &[Proc], with_cmd: bool) -> Table {
     let mut cols = vec![
         Col::new("PID", Align::Right, Some(8)).min_width(5),
-        Col::new("ИМЯ", Align::Left, None).min_width(12).flexible(),
+        Col::new("NAME", Align::Left, None).min_width(12).flexible(),
         Col::new("CPU", Align::Right, Some(7)).min_width(6),
-        Col::new("ПАМЯТЬ", Align::Right, Some(9)).min_width(6),
-        Col::new("ПОЛЬЗОВАТЕЛЬ", Align::Left, Some(20)).min_width(8),
-        Col::new("СОСТОЯНИЕ", Align::Left, Some(14)).min_width(8),
-        Col::new("ВРЕМЯ", Align::Right, Some(13)).min_width(6),
+        Col::new("MEMORY", Align::Right, Some(9)).min_width(6),
+        Col::new("USER", Align::Left, Some(20)).min_width(8),
+        Col::new("STATE", Align::Left, Some(14)).min_width(8),
+        Col::new("TIME", Align::Right, Some(13)).min_width(6),
     ];
     if with_cmd {
         cols.push(
-            Col::new("КОМАНДНАЯ СТРОКА", Align::Left, None)
+            Col::new("COMMAND LINE", Align::Left, None)
                 .min_width(16)
                 .flexible(),
         );
@@ -103,7 +103,7 @@ pub fn process_table(procs: &[Proc], with_cmd: bool) -> Table {
     table
 }
 
-/// Обрезает домен из имени пользователя (`DOMAIN\user` -> `user`).
+/// Strips the domain from a user name (`DOMAIN\user` -> `user`).
 fn anon_user(user: &str) -> String {
     match user.rsplit_once('\\') {
         Some((_, name)) if !name.is_empty() => name.to_owned(),
@@ -111,14 +111,14 @@ fn anon_user(user: &str) -> String {
     }
 }
 
-/// Печатает шапку со сводкой по системе в стиле «Производительность».
+/// Prints the system summary header, in the spirit of the Performance tab.
 pub fn print_header(snapshot: &Snapshot, matched: usize, shown: usize, width: usize) {
     let os = snapshot
         .host
         .long_os
         .clone()
         .or_else(|| snapshot.host.os_name.clone())
-        .unwrap_or_else(|| "неизвестная ОС".to_owned());
+        .unwrap_or_else(|| "unknown OS".to_owned());
     let host = snapshot.host.hostname.clone().unwrap_or_default();
     let mut first = os;
     if !host.is_empty() {
@@ -126,12 +126,12 @@ pub fn print_header(snapshot: &Snapshot, matched: usize, shown: usize, width: us
     }
     let _ = write!(
         first,
-        " · ядер: {}/{}",
+        " · cores: {}/{}",
         snapshot.host.physical_cores, snapshot.host.logical_cores
     );
     let _ = write!(
         first,
-        " · аптайм: {}",
+        " · uptime: {}",
         crate::util::uptime(snapshot.host.uptime)
     );
     println!("{}", ansi::bold(&first));
@@ -142,7 +142,7 @@ pub fn print_header(snapshot: &Snapshot, matched: usize, shown: usize, width: us
     let cpu_bar = ansi::paint(ansi::load_code(cpu), &bar(cpu, bar_width, table::ascii()));
     let mem_bar = ansi::paint(ansi::load_code(mem), &bar(mem, bar_width, table::ascii()));
     println!(
-        "CPU {cpu_bar} {}   ПАМЯТЬ {mem_bar} {} / {}   ПРОЦЕССОВ {} из {}",
+        "CPU {cpu_bar} {}   MEMORY {mem_bar} {} / {}   PROCESSES {} of {}",
         ansi::bold(&format!("{cpu:.1}%")),
         bytes_long(snapshot.mem.used),
         bytes_long(snapshot.mem.total),
@@ -152,7 +152,7 @@ pub fn print_header(snapshot: &Snapshot, matched: usize, shown: usize, width: us
     println!(
         "{}",
         ansi::dim(&format!(
-            "суммарно по процессам: CPU {:.1}% · память {}",
+            "totals across processes: CPU {:.1}% · memory {}",
             snapshot.total_cpu(),
             bytes_long(snapshot.total_mem())
         ))
@@ -196,7 +196,7 @@ fn json_procs(procs: &[Proc], with_cmd: bool) -> String {
     json::array(items)
 }
 
-/// Выполняет подкоманду `list`.
+/// Runs the `list` subcommand.
 pub fn run(args: ListArgs) -> Result<()> {
     let mut collector = Collector::new().with_global_cpu();
     let snapshot = collector.refresh(false);
@@ -226,10 +226,7 @@ pub fn run(args: ListArgs) -> Result<()> {
     }
 
     if procs.is_empty() {
-        println!(
-            "{}",
-            ansi::yellow("Процессы не найдены — проверьте фильтр.")
-        );
+        println!("{}", ansi::yellow("No processes found — check the filter."));
         return Ok(());
     }
 
@@ -242,7 +239,7 @@ pub fn run(args: ListArgs) -> Result<()> {
         println!(
             "{}",
             ansi::dim(&format!(
-                "… показано {} из {} процессов (отсортировано по {})",
+                "… showing {} of {} processes (sorted by {})",
                 procs.len(),
                 matched,
                 args.sort.label()

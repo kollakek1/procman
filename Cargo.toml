@@ -1,11 +1,13 @@
 [package]
 name = "procman"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.85"
-description = "procman — диспетчер задач в терминале (аналог Windows Task Manager)"
+description = "procman — a terminal task manager: process list, tree, ending tasks, performance summary"
 license = "MIT"
 readme = "README.md"
+keywords = ["cli", "process", "monitor", "task-manager", "sysinfo"]
+categories = ["command-line-utilities", "os"]
 
 [dependencies]
 anyhow = "1"
@@ -24,13 +26,13 @@ unsafe_code = "warn"
 [lints.clippy]
 all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
-# Осознанные послабления для CLI:
-too_many_lines = "allow"           # подкоманды — линейные сценарии с выводом
-struct_excessive_bools = "allow"   # структуры-аргументы clap состоят из флагов
+# Deliberate exceptions for a CLI:
+too_many_lines = "allow"           # subcommands are linear printing scenarios
+struct_excessive_bools = "allow"   # clap argument structs consist of flags
 similar_names = "allow"
-needless_pass_by_value = "allow"   # аргументы clap передаются по значению
-unnecessary_wraps = "allow"        # run(...) -> Result ради единообразия диспетчера
-cast_possible_truncation = "allow" # проценты и доли округляются при выводе
+needless_pass_by_value = "allow"   # clap arguments are passed by value
+unnecessary_wraps = "allow"        # run(...) -> Result keeps the dispatcher uniform
+cast_possible_truncation = "allow" # percentages and fractions are rounded on output
 cast_precision_loss = "allow"
 cast_sign_loss = "allow"
 cast_possible_wrap = "allow"

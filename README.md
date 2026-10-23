@@ -1,48 +1,64 @@
-# procman — диспетчер задач в терминале
+# procman — a task manager for your terminal
 
-Консольный аналог Диспетчера задач Windows на Rust: список процессов с реальными
-процентами загрузки, снятие задач, дерево процессов, сводка по производительности
-и живой монитор с обновлением в реальном времени.
+A console counterpart of the Windows Task Manager written in Rust: a process
+list with honest CPU percentages, ending tasks, a process tree, a performance
+summary and a live monitor that refreshes in real time.
 
 ```
-Windows 11 Pro for Workstations · kolla · ядер: 8/16 · аптайм: 2ч 43мин 22с
-CPU ██░░░░░░░░░░░░░ 11.1%   ПАМЯТЬ █████████░░░░░░ 9.02 ГиБ / 14.81 ГиБ   ПРОЦЕССОВ 8 из 230
-суммарно по процессам: CPU 18.9% · память 8.09 ГиБ
-  PID │ ИМЯ                                     │    CPU │ ПАМЯТЬ │ ПОЛЬЗОВАТЕЛЬ │ СОСТОЯНИЕ │   ВРЕМЯ
-──────────────────────────────────────────────────────────────────────────────────────────────────────
- 5804 │ powershell.exe                          │   5.9% │  61.3M │ kolla        │ Работает  │    0:05
- 7800 │ procman.exe                             │   4.8% │  16.0M │ kolla        │ Работает  │    0:02
- 7680 │ explorer.exe                            │   4.0% │   291M │ kolla        │ Работает  │ 2:43:13
-16040 │ AMDRSServ.exe                           │   1.8% │   137M │ kolla        │ Работает  │ 2:42:49
-20784 │ opencode.exe                            │   0.9% │   283M │ kolla        │ Работает  │ 1:32:48
+Windows 11 Pro for Workstations · kolla · cores: 8/16 · uptime: 2h 43m 22s
+CPU ██░░░░░░░░░░░░░ 11.1%   MEMORY █████████░░░░░░ 9.02 GiB / 14.81 GiB   PROCESSES 8 of 230
+totals across processes: CPU 18.9% · memory 8.09 GiB
+  PID │ NAME                                    │    CPU │ MEMORY │ USER         │ STATE    │   TIME
+──────────────────────────────────────────────────────────────────────────────────────────────────
+ 5804 │ powershell.exe                          │   5.9% │  61.3M │ kolla        │ Running  │    0:05
+ 7800 │ procman.exe                             │   4.8% │  16.0M │ kolla        │ Running  │    0:02
+ 7680 │ explorer.exe                            │   4.0% │   291M │ kolla        │ Running  │ 2:43:13
+16040 │ AMDRSServ.exe                           │   1.8% │   137M │ kolla        │ Running  │ 2:42:49
+20784 │ opencode.exe                            │   0.9% │   283M │ kolla        │ Running  │ 1:32:48
 ```
 
-## Возможности
+## Features
 
-| Команда   | Что делает                                                            |
+| Command   | What it does                                                          |
 |-----------|-----------------------------------------------------------------------|
-| `list`    | таблица процессов с сортировкой, фильтрами и сводкой по системе       |
-| `watch`   | живой монитор: обновление, прокрутка, фильтр, снятие задач с клавиатуры |
-| `info`    | подробности о процессе: родитель, цепочка, файл, каталог, командная строка |
-| `tree`    | дерево процессов «родитель → потомки» с агрегатами по ветвям           |
-| `kill`    | завершение процессов по PID или имени, с подтверждением и отчётом      |
-| `summary` | вкладка «Производительность»: CPU по ядрам, память, подкачка, диски, сеть |
+| `list`    | process table with sorting, filters and a system summary header       |
+| `watch`   | live monitor: refresh, scrolling, filtering, ending tasks from the keyboard |
+| `info`    | process details: parent, chain, executable, working directory, command line |
+| `tree`    | process tree (parent → children) with per-branch totals               |
+| `kill`    | end processes by PID or name, with confirmation and a result report   |
+| `summary` | the Performance tab: per-core CPU, memory, swap, disks, network       |
 
-Прочее:
+Also:
 
-- **Честные проценты CPU.** Значение приводится к доле от всех ядер, как в
-  диспетчере задач: однопоточная нагрузка на 16-ядерной машине показывает ~6%,
-  а не 100%. Есть и «сырое» значение по одному ядру (видно в `info` и JSON).
-- **Вывод в JSON** (`--json`) для `list`, `info`, `tree`, `kill`, `summary` —
-  удобно для скриптов и мониторинга.
-- **Цвет** включается сам при выводе в терминал, отключается флагом `--no-color`
-  или переменной `NO_COLOR`; флаг `--ascii` заменяет псевдографику на ASCII.
-- **Без `unsafe`** — весь код на безопасном Rust (`unsafe_code = "warn"`).
-- Кроссплатформенность: Windows, Linux, macOS (данные собирает крейт `sysinfo`).
+- **Honest CPU percentages.** Values are normalised to a share of all cores the
+  way Task Manager counts them: a single-threaded load on a 16-core machine
+  reports ~6% instead of 100%. The raw single-core value is shown as well
+  (in `info` and in JSON).
+- **JSON output** (`--json`) for `list`, `info`, `tree`, `kill` and `summary`,
+  which makes scripting and monitoring easy.
+- **Colour** turns on automatically when writing to a terminal and can be
+  disabled with `--no-color` or the `NO_COLOR` variable; `--ascii` switches
+  box drawing to plain ASCII.
+- **No `unsafe` code** anywhere (`unsafe_code = "warn"`).
+- Cross-platform: Windows, Linux and macOS (data is gathered with `sysinfo`).
 
-## Установка
+## Install
 
-Из исходников (нужен Rust 1.85+):
+Download a prebuilt archive from the
+[latest release](https://github.com/kollakek1/procman/releases/latest):
+
+| Platform | Archive |
+|----------|---------|
+| Windows x86_64 | `procman-<version>-x86_64-pc-windows-msvc.zip` |
+| Linux x86_64 | `procman-<version>-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux aarch64 | `procman-<version>-aarch64-unknown-linux-gnu.tar.gz` |
+| macOS Apple Silicon | `procman-<version>-aarch64-apple-darwin.tar.gz` |
+| macOS Intel | `procman-<version>-x86_64-apple-darwin.tar.gz` |
+
+Each archive contains the binary plus `README.md`, `LICENSE` and `CHANGELOG.md`.
+A `SHA256SUMS.txt` file with checksums is attached to every release.
+
+From source (Rust 1.85 or newer):
 
 ```sh
 git clone https://github.com/kollakek1/procman.git
@@ -50,94 +66,83 @@ cd procman
 cargo install --path .
 ```
 
-Или просто собрать:
+## Quick start
 
 ```sh
-cargo build --release
-# готовый файл: target/release/procman(.exe)
+procman list                     # process list, sorted by CPU
+procman list -n 15 --sort mem    # top 15 processes by memory
+procman list -f chrome -c        # search by name and show command lines
+procman watch                    # live monitor (press q to quit)
+procman info 4321                # details about a process
+procman tree --filter chrome     # process tree with a filter
+procman kill notepad.exe -y      # end a task without confirmation
+procman summary --top 10         # performance summary
 ```
 
-Готовые сборки — в разделе
-[Releases](https://github.com/kollakek1/procman/releases): архив с `procman.exe`
-для Windows x86_64 (MSVC).
+See [docs/COMMANDS.md](docs/COMMANDS.md) for the full command reference.
 
-## Быстрый старт
+## What it looks like
 
-```sh
-procman list                     # список процессов, сортировка по CPU
-procman list -n 15 --sort mem    # топ-15 по памяти
-procman list -f chrome -c        # поиск по имени с показом командных строк
-procman watch                    # живой монитор (выход — q)
-procman info 4321                # подробности о процессе
-procman tree --filter chrome     # дерево процессов с фильтром
-procman kill notepad.exe -y      # снять задачу без подтверждения
-procman summary --top 10         # сводка по производительности
-```
-
-Полный справочник по командам и флагам — в [docs/COMMANDS.md](docs/COMMANDS.md).
-
-## Как это выглядит
-
-Список процессов с командными строками и ASCII-рамкой (`--ascii`):
+The process list with command lines and ASCII borders (`--ascii`):
 
 ```
-  PID | ИМЯ                 |    CPU | ПАМЯТЬ | ПОЛЬЗОВАТЕЛЬ | СОСТОЯНИЕ |   ВРЕМЯ | КОМАНДНАЯ СТРОКА
------------------------------------------------------------------------------------------------------
- 7964 | WindowsTerminal.exe |   0.5% |  97.3M | kolla        | Работает  | 1:28:25 | C:\Program Files\WindowsApps\Micro…
-21196 | chrome.exe          |   0.3% |   487M | kolla        | Работает  | 1:35:03 | C:\Program Files\Google\Chrome\App…
+  PID | NAME                |    CPU | MEMORY | USER         | STATE   |   TIME | COMMAND LINE
+------------------------------------------------------------------------------------------------
+ 7964 | WindowsTerminal.exe |   0.5% |  97.3M | kolla        | Running | 1:28:25 | C:\Program Files\WindowsApps\Micro…
+21196 | chrome.exe          |   0.3% |   487M | kolla        | Running | 1:35:03 | C:\Program Files\Google\Chrome\App…
 ```
 
-Подробности о процессе:
+Details about a process:
 
 ```
-powershell.exe (PID 19768) Работает
-CPU █░░░░░░░░░░░░░░░ 6.25%   ПАМЯТЬ ░░░░░░░░░░░░░░░░ 67.55 МиБ (0.4% ОЗУ)
+powershell.exe (PID 19768) Running
+CPU █░░░░░░░░░░░░░░░ 6.25%   MEMORY ░░░░░░░░░░░░░░░░ 67.55 MiB (0.4% of RAM)
 
-Идентификатор (PID)  │ 19768
-Родительский процесс │ opencode.exe (PID 6648)
-Цепочка процессов    │ powershell.exe (19768) ← opencode.exe (6648) ← …
-Состояние            │ Работает
-Загрузка CPU         │ 6.25% от всех ядер (100.0% одного ядра)
-Память (RSS)         │ 67.55 МиБ
-Время работы         │ 0:03
-Запущен (UTC)        │ 2026-10-23 17:35:59 UTC (3 с назад)
+Process ID (PID)     │ 19768
+Parent process       │ opencode.exe (PID 6648)
+Process chain        │ powershell.exe (19768) ← opencode.exe (6648) ← …
+State                │ Running
+CPU usage            │ 6.25% of all cores (100.0% of one core)
+Memory (RSS)         │ 67.55 MiB
+Run time             │ 0:03
+Started (UTC)        │ 2026-10-23 17:35:59 UTC (3 s ago)
 
-Исполняемый файл: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
-Рабочий каталог: C:\Users\kolla\develop\projects\
-Командная строка: C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.EXE -NoLogo …
+Executable: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+Working directory: C:\Users\kolla\develop\projects\
+Command line: C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.EXE -NoLogo …
 ```
 
-Живой монитор (`watch`) — заголовок с полосками загрузки и спакрлайном истории:
+The live monitor (`watch`) with load bars and a sparkline of CPU history:
 
 ```
-procman — диспетчер задач   Windows 11 Pro for Workstations · kolla · аптайм 1ч 28мин · ядер 8/16
-CPU     ███░░░░░░░░░░░░░░░░░░░░░░ 12.4%  ▁▂▃▅▂▇█   до 2508 МГц
-ПАМЯТЬ  ██████████░░░░░░░░░░░░░░░ 42.1%  6.24 ГиБ / 14.81 ГиБ   подкачка 6.2%   доступно 8.07 ГиБ
-СПИСОК  CPU ↓   интервал 1.0 с   фильтр: —   обновлений 12
+procman — task manager   Windows 11 Pro for Workstations · kolla · uptime 1h 28m · cores 8/16
+CPU     ███░░░░░░░░░░░░░░░░░░░░░░ 12.4%  ▁▂▃▅▂▇█  up to 2508 MHz
+MEMORY  ██████████░░░░░░░░░░░░░░░ 42.1%  6.24 GiB / 14.81 GiB   swap 6.2%   available 8.07 GiB
+LIST    CPU ↓   interval 1.0 s   filter: —   refreshes 12
 
-↑/↓ выбор · s сортировка · r порядок · f фильтр · c сброс · x снять задачу · Enter подробности
+↑/↓ select · s sort · r order · f filter · c reset · x end task · Enter details · space pause
 ```
 
-Клавиши живого монитора:
+Keys of the live monitor:
 
-| Клавиша              | Действие                                          |
-|----------------------|---------------------------------------------------|
-| `↑` / `↓`, `j` / `k` | перемещение по списку                             |
-| `Home` / `End`, `g` / `G` | в начало / в конец                           |
-| `PageUp` / `PageDown`| на страницу                                       |
-| `s`                  | следующий ключ сортировки                         |
-| `r`                  | изменить направление сортировки                   |
-| `f`                  | фильтр по имени, PID или пользователю             |
-| `c`                  | сбросить фильтр                                   |
-| `x` / `Delete`       | снять задачу с выбранного процесса (с `y`/`n`)    |
-| `Enter`              | панель с подробностями о процессе                 |
-| `пробел`             | пауза / продолжить                                |
-| `+` / `-`            | увеличить / уменьшить интервал обновления         |
-| `a`                  | показать / скрыть командные строки                |
-| `?`                  | справка                                           |
-| `q` / `Esc`          | выход                                             |
+| Key                  | Action                                             |
+|----------------------|----------------------------------------------------|
+| `↑` / `↓`, `j` / `k` | move through the list                              |
+| `Home` / `End`, `g` / `G` | jump to the top / bottom                      |
+| `PageUp` / `PageDown`| move a page                                        |
+| `s`                  | next sort key                                      |
+| `r`                  | flip the sort direction                            |
+| `f`                  | filter by name, PID or user                        |
+| `c`                  | clear the filter                                   |
+| `x` / `Delete`       | end the selected process (confirm with `y`/`n`)    |
+| `Enter`              | panel with details about the process               |
+| `space`              | pause / resume                                     |
+| `+` / `-`            | increase / decrease the refresh interval           |
+| `a`                  | show / hide command lines                          |
+| `?`                  | help                                               |
+| `q` / `Esc`          | quit                                               |
 
-## JSON для скриптов
+## JSON for scripts
 
 ```sh
 procman list --json -n 5 | jq '.[] | {pid, name, cpu}'
@@ -145,58 +150,64 @@ procman summary --json | jq '.memory.used_percent'
 procman kill 1234 -y --json | jq '.finished'
 ```
 
-## Производительность
+## Performance
 
-Первый снимок на Windows стоит дороже последующих:
+The first snapshot is the expensive one:
 
-| Команда | Холодный запуск (release) |
-|---------|---------------------------|
-| `list`  | ~1.3 с |
-| `summary`, `watch` | ~1.6 с (плюс время сбора, `watch` обновляется инкрементально по ~20 мс) |
-| `info`, `tree`, `kill` | ~0.6 с |
+| Command | Cold start (release build) |
+|---------|----------------------------|
+| `list`  | ~1.3 s |
+| `summary`, `watch` | ~1.6 s (plus the sampling interval; `watch` then refreshes in ~20 ms) |
+| `info`, `tree`, `kill` | ~0.6 s |
 
-Причины и внутренние подробности — в [docs/INTERNALS.md](docs/INTERNALS.md):
-первые обращения к счётчикам производительности Windows стоят ~0.6 с, а
-`sysinfo` требует трёх выборок процессов, чтобы посчитать честные проценты CPU.
+The reasons and the internals are described in
+[docs/INTERNALS.md](docs/INTERNALS.md): the first touch of the Windows
+performance counters costs ~0.6 s, and `sysinfo` needs three process samples to
+compute honest CPU percentages.
 
-Диагностика по этапам:
+Stage timings are available for diagnosis:
 
 ```sh
 PROCMAN_TIMING=1 procman list -n 1
-# [timing] инициализация: 26 мс
-# [timing] прогрев: 294 мс всего
-# [timing] снимок: подготовка 0 мс, процессы 12 мс, доп. 12 мс
-# [timing] сборка снимка: 0 мс
+# [timing] init: 26 ms
+# [timing] warm-up: 294 ms total
+# [timing] snapshot: prep 0 ms, processes 12 ms, extra 12 ms
+# [timing] snapshot build: 0 ms
 ```
 
-## Разработка
+## Development
 
 ```sh
-cargo build            # сборка
-cargo test             # 29 юнит-тестов: форматирование, таблицы, сортировка,
-                       # дерево процессов, отрисовка кадров watch, разбор клавиш
-cargo clippy --all-targets   # без предупреждений (all + pedantic)
+cargo build                  # build
+cargo test                   # 29 unit tests: formatting, tables, sorting,
+                             # process tree, watch frames, key handling
+cargo clippy --all-targets   # no warnings (all + pedantic)
 cargo fmt
 ```
 
-Структура:
+Layout:
 
 ```
 src/
-  main.rs        разбор аргументов (clap) и диспетчер подкоманд
-  collector.rs   обёртка над sysinfo: выборки, прогрев, завершение процессов
-  model.rs       модель данных: Proc, Snapshot, HostInfo/CpuInfo/MemInfo/…
-  cmd/           подкоманды: list, watch, info, tree, kill, summary
-  table.rs       рендер таблиц и строк с учётом видимой ширины (Line)
-  ansi.rs        минимальная раскраска (без зависимостей)
-  json.rs        вывод JSON (без serde)
-  util.rs        форматирование размеров, времени, полосок, числительных
+  main.rs        argument parsing (clap) and the subcommand dispatcher
+  collector.rs   a wrapper over sysinfo: samples, warm-up, ending processes
+  model.rs       the data model: Proc, Snapshot, HostInfo/CpuInfo/MemInfo/…
+  cmd/           subcommands: list, watch, info, tree, kill, summary
+  table.rs       table and line rendering that respects the visible width (Line)
+  ansi.rs        minimal colouring (no dependencies)
+  json.rs        JSON output (no serde)
+  util.rs        sizes, time, bars, numbers
 ```
 
-Зависимости: `clap` (аргументы), `sysinfo` (данные о системе), `crossterm`
-(живой режим терминала), `anyhow` (ошибки). Раскраска, JSON и таблицы
-написаны самостоятельно — без `serde`, `colored` и `tabled`.
+Dependencies: `clap` (arguments), `sysinfo` (system data), `crossterm` (the live
+terminal mode), `anyhow` (errors). Colouring, JSON and tables are written by
+hand — no `serde`, `colored` or `tabled`.
 
-## Лицензия
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs formatting, clippy
+and the tests on Windows, Linux and macOS. Pushing a `v*` tag runs
+[`.github/workflows/release.yml`](.github/workflows/release.yml), which builds
+binaries for all supported targets and publishes them as a GitHub release.
 
-MIT — см. [LICENSE](LICENSE).
+## License
+
+MIT — see [LICENSE](LICENSE).

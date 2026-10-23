@@ -1,147 +1,164 @@
-# Устройство и отладка
+# Internals and debugging notes
 
-Здесь описано, как устроен `procman` и — что важнее — какие особенности `sysinfo`
-на Windows пришлось выяснить замерами, потому что от них напрямую зависит
-достоверность процентов CPU.
+This document describes how `procman` is built and — more importantly — which
+`sysinfo` quirks had to be measured on Windows, because honest CPU percentages
+depend on them directly.
 
-## Поток данных
+## Data flow
 
 ```
-Collector::new()            дешёвая инициализация + прогрев счётчиков процессов
+Collector::new()            cheap initialisation + counter warm-up
    │
-   ├─ refresh(extended)     выборка: CPU, память, процессы, [диски, сети]
+   ├─ refresh(extended)     sample: CPU, memory, processes, [disks, networks]
    │
-   └─ Snapshot               неизменяемый снимок: host, cpu, mem, [disks, nets], procs
+   └─ Snapshot              an immutable snapshot: host, cpu, mem, [disks, nets], procs
          │
-         └─ команды         фильтрация, сортировка, агрегаты, отрисовка
+         └─ commands        filtering, sorting, aggregates, rendering
                │
-               ├─ table.rs  Line — строка из кусочков текста со стилями
-               ├─ ansi.rs   раскраска (только если вывод в терминал)
-               └─ json.rs   вывод структуры в JSON без serde
+               ├─ table.rs  Line — a line made of styled text chunks
+               ├─ ansi.rs   colouring (only when writing to a terminal)
+               └─ json.rs   JSON output without serde
 ```
 
-`Snapshot` — единственная точка, где данные от `sysinfo` превращаются в
-собственные структуры (`Proc`, `HostInfo`, `CpuInfo`…). Команды работают уже
-только с ними, поэтому вся логика отображения тестируется без живой системы
-(см. `cmd/watch.rs::tests` — там синтетический `Snapshot`).
+`Snapshot` is the single place where data from `sysinfo` turns into our own
+structures (`Proc`, `HostInfo`, `CpuInfo`…). Commands only work with those, so
+all rendering logic can be tested without a live system (see
+`cmd/watch.rs::tests`, which builds a synthetic `Snapshot`).
 
-## Проценты CPU: три выборки и нормализация
+## CPU percentages: three samples and normalisation
 
-`sysinfo` считает загрузку процесса как разницу счётчиков между двумя
-выборками. На практике (Windows 11, `sysinfo` 0.39) этого мало:
+`sysinfo` computes a process load as the difference of counters between two
+samples. In practice (Windows 11, `sysinfo` 0.39) that is not enough:
 
-| Замер | Значение для ядра, занятого на 100% |
-|-------|-------------------------------------|
-| первая выборка после создания `System` | 0.0% |
-| вторая выборка через 200 мс | 0.1% |
-| третья выборка через 200 мс | **100.0%** |
+| Sample | Value for a core busy at 100% |
+|--------|-------------------------------|
+| first sample after the `System` is created | 0.0% |
+| second sample, 200 ms later | 0.1% |
+| third sample, another 200 ms later | **100.0%** |
 
-Поэтому `Collector::new` делает «прогрев»: базовую выборку, паузу, ещё одну
-выборку (её результат отбрасывается). Рабочая выборка приходит из
-`Collector::refresh` — это третий замер.
+`Collector::new` therefore performs a warm-up: a base sample, a pause, one more
+sample whose result is discarded. The working sample comes from
+`Collector::refresh` — that is the third one.
 
-Дополнительные правила, найденные замерами:
+Further rules found by measurement:
 
-- пауза между выборками должна быть не меньше `MINIMUM_CPU_UPDATE_INTERVAL`
-  (200 мс) — при 100 мс значения остаются нулевыми; в коде добавляется запас
-  25 мс, потому что таймер Windows даёт шаг около 15 мс;
-- интервал отсчитывается от **момента выборки**, а не от начала предыдущей:
-  первая выборка самая долгая (читает пути, командные строки и владельцев
-  процессов) и «съедает» паузу, из-за чего следующий замер оказывается слишком
-  коротким. Поэтому `Collector::sample_processes` запоминает время сразу после
-  выборки;
-- набор полей у всех выборок должен совпадать;
-- `ProcessRefreshKind::with_cpu()` в одиночку в этом не помощник, а вот
-  `with_exe/cmd/cwd/user` c `UpdateKind::OnlyIfNotSet` бесплатны на повторных
-  выборках (дорогие поля читаются один раз на процесс).
+- the pause between samples must be at least `MINIMUM_CPU_UPDATE_INTERVAL`
+  (200 ms) — at 100 ms the values stay at zero; the code adds a 25 ms margin
+  because the Windows scheduler ticks roughly every 15 ms;
+- the interval is counted from the **moment of the sample**, not from the start
+  of the previous one: the first sample is the slowest (it reads executable
+  paths, command lines and owners) and eats the pause, which makes the following
+  measurement too short. That is why `Collector::sample_processes` records the
+  time right after sampling;
+- all samples must request the same set of fields;
+- `ProcessRefreshKind::with_cpu()` alone does not help here, while
+  `with_exe/cmd/cwd/user` with `UpdateKind::OnlyIfNotSet` is free on later
+  samples (the expensive fields are read once per process).
 
-Нормирование: `sysinfo` отдаёт загрузку в процентах **одного ядра** (однопоточная
-нагрузка показывает ~100%). `procman` делит её на число логических ядер — так
-считает диспетчер задач, и сумма по процессам оказывается сопоставимой с общей
-загрузкой. Сырое значение сохраняется в `Proc::cpu_core` и видно в `info`:
+Normalisation: `sysinfo` reports a load in percent of **one core** (a
+single-threaded load reports ~100%). `procman` divides it by the number of
+logical cores — the way Task Manager counts it — so that the sum across
+processes is comparable to the total load. The raw value is kept in
+`Proc::cpu_core` and is visible in `info`:
 
 ```
-Загрузка CPU         │ 6.25% от всех ядер (100.0% одного ядра)
+CPU usage            │ 6.25% of all cores (100.0% of one core)
 ```
 
-Общий процент CPU тоже требует осторожности:
+The global CPU percentage needs care as well:
 
-- самый первый замер всегда даёт мусорные 100%, поэтому `with_global_cpu()`
-  делает базовую точку, а честное значение снимается в `refresh()`;
-- **снимать его нужно сразу** после `refresh_cpu_usage()`: следующий за ним замер
-  процессов пересчитывает и перезаписывает значение;
-- `System::load_average()` на Windows всегда возвращает нули, но первый вызов
-  стоит около 0.7 с — поэтому там он не вызывается вовсе.
+- the very first sample always reports a bogus 100%, so `with_global_cpu()`
+  takes a base point and the honest value is read in `refresh()`;
+- **it must be read immediately** after `refresh_cpu_usage()`: the process
+  sample that follows recomputes and overwrites the value;
+- `System::load_average()` always returns zeros on Windows, yet its first call
+  costs about 0.7 s — so it is not called there at all.
 
-## Почему запуск стоит ~1 с
+## Why a cold start costs about a second
 
-Первый запрос к счётчикам производительности CPU (`refresh_cpu_all` через
-`with_global_cpu`) на тестовой машине занимает **~0.63 с** — это разовая цена в
-рамках процесса, дальше такие вызовы бесплатны. Команды, которым общий процент
-не нужен (`info`, `tree`, `kill`), его не запрашивают и работают за ~0.6 с.
+The first touch of the CPU performance counters (`refresh_cpu_all` inside
+`with_global_cpu`) takes **~0.63 s** on the test machine — a one-off price per
+process, after which such calls are free. Commands that do not need the global
+percentage (`info`, `tree`, `kill`) never ask for it and finish in ~0.6 s.
 
-Итого холодный запуск (release):
+Cold start (release build):
 
-| Команда | Время | Из чего складывается |
-|---------|-------|----------------------|
-| `tree`, `info`, `kill` | ~0.6 с | 2 паузы по 225 мс + ~30 мс на процедуры, ~15 мс сбор сети/дисков |
-| `list` | ~1.3 с | то же + ~0.63 с на первый замер CPU |
-| `summary` | ~1.6 с | то же + интервал наблюдения за сетью (по умолчанию 1 с) |
+| Command | Time | Made of |
+|---------|------|---------|
+| `tree`, `info`, `kill` | ~0.6 s | two 225 ms pauses + ~30 ms of calls + ~15 ms for networks and disks |
+| `list` | ~1.3 s | the same plus ~0.63 s for the first CPU sample |
+| `summary` | ~1.6 s | the same plus the network observation interval (1 s by default) |
 
-Диагностика этапов: `PROCMAN_TIMING=1 procman list -n 1` (в stderr).
+Stage timings: `PROCMAN_TIMING=1 procman list -n 1` (printed to stderr).
 
-Сбор данных процессов разложен на дешёвую инициализацию
-(`System::new_with_specifics` с `CpuRefreshKind::nothing()` — ноль миллисекунд)
-и отдельные дорогие вызовы. `System::new_all()` не используется: он читает
-переменные окружения всех процессов и сразу делает дорогой замер CPU.
+Gathering process data is split into a cheap initialisation
+(`System::new_with_specifics` with `CpuRefreshKind::nothing()` — zero
+milliseconds) and separate expensive calls. `System::new_all()` is not used: it
+reads the environment of every process and immediately performs an expensive CPU
+sample.
 
-## Рендер таблиц
+## Table rendering
 
-`table::Line` хранит строку по кусочкам `(стиль, текст)` и знает свою **видимую**
-ширину — поэтому раскраска применяется после выравнивания и не ломает отступы.
-Подгонка ширины:
+`table::Line` keeps a line as chunks of `(style, text)` and knows its own
+**visible** width — which is why colouring is applied after alignment and never
+breaks the padding. Width fitting:
 
-1. вычисляются естественные ширины колонок с учётом `Col::min`/`Col::max`;
-2. если сумма больше ширины терминала, сжимается самая широкая колонка (но не
-   ниже `min`);
-3. лишнее место распределяется по «упругим» колонкам (`Col::flexible` —
-   обычно это имя и командная строка);
-4. содержимое обрезается по видимым символам с многоточием.
+1. natural column widths are computed, respecting `Col::min`/`Col::max`;
+2. if the sum exceeds the terminal width, the widest column is shrunk (but never
+   below `min`);
+3. the leftover space is distributed across "elastic" columns (`Col::flexible` —
+   usually the name and the command line);
+4. content is truncated by visible characters with an ellipsis.
 
-`Line::truncated`/`pad_to`/`trimmed` используются и в `watch`: кадр собирается из
-готовых строк, каждый кадр печатается целиком одним `write` — перерисовка без
-мерцания. Тесты `table::tests` проверяют, что ни одна строка не выходит за
-ширину при 20/40/80/200 колонках.
+`Line::truncated`/`pad_to`/`trimmed` are used by `watch` too: the frame is
+assembled from finished lines and written with a single `write`, which avoids
+flicker. `table::tests` check that no line exceeds the width at 20/40/80/200
+columns.
 
-## Живой режим
+## Live mode
 
-`watch` использует `crossterm`: raw-режим, альтернативный экран, скрытие курсора.
-Возврат терминала в исходное состояние выполняет `Drop` у обёртки `Terminal` —
-экран восстановится и при ошибке, и при раннем выходе. Клавиши обрабатываются
-только событиями `KeyEventKind::Press` (Windows присылает и отпускания), а
-каждый кадр подгоняется точно под высоту терминала: лишние строки обрезаются,
-недостающие дополняются пустыми.
+`watch` uses `crossterm`: raw mode, the alternate screen, a hidden cursor. The
+terminal is restored by `Drop` on the `Terminal` wrapper — the screen is restored
+both on errors and on an early exit. Keys are handled only for
+`KeyEventKind::Press` events (Windows also delivers releases), and every frame is
+fitted to the terminal height exactly: extra lines are dropped, missing ones are
+padded.
 
-Логика отрисовки и разбора клавиш покрыта тестами без терминала: проверяются
-геометрия кадра при разных размерах, прокрутка выделения, пустой фильтр,
-панели-оверлеи и переходы состояния по клавишам.
+Frame rendering and key handling are covered by tests that need no terminal:
+frame geometry at different sizes, selection scrolling, an empty filter, overlay
+panels and key-driven state transitions.
 
-## Завершение процессов
+## Ending processes
 
-`Collector::kill` отправляет `Signal::Term` при `--terminate` (если платформа его
-поддерживает) или вызывает `Process::kill()` — принудительное завершение
-(`TerminateProcess` на Windows). После завершения команда перепроверяет каждый PID
-(`Collector::alive`) и различает три состояния: «завершён», «завершается»,
-«отказано». Неудачи дают код выхода 1.
+`Collector::kill` sends `Signal::Term` when `--terminate` is used (if the
+platform supports it), otherwise it calls `Process::kill()` — a forced
+termination (`TerminateProcess` on Windows). Afterwards every PID is checked
+again (`Collector::alive`) and three states are distinguished: "ended",
+"ending", "denied". Failures produce exit code 1.
 
-## Тесты
+## Tests
 
 ```
 cargo test
 ```
 
-29 юнит-тестов: форматирование размеров/времени/числительных, дата из Unix-времени,
-JSON, рендер и подгонка таблиц, сортировка и фильтрация процессов, поиск целей,
-дерево процессов (агрегаты, корни-сироты, циклы, соединительные линии), кадры и
-клавиши живого монитора. Тесты, меняющие глобальные флаги (цвет, ASCII), сериализуются
-мьютексом, чтобы не влиять друг на друга при параллельном запуске.
+29 unit tests: size, time and number formatting, dates from Unix time, JSON,
+table rendering and fitting, process sorting and filtering, target lookup,
+the process tree (aggregates, orphan roots, cycles, connector lines) and the
+live monitor (frames and keys). Tests that touch global flags (colour, ASCII)
+are serialised with a mutex so that they do not influence each other when run in
+parallel.
+
+## CI and releases
+
+- [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs
+  `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, the tests and
+  a release build on Windows, Linux and macOS for every push to `main` and for
+  pull requests.
+- [`.github/workflows/release.yml`](../.github/workflows/release.yml) runs on a
+  `v*` tag: it cross-compiles binaries for `x86_64-unknown-linux-gnu`,
+  `aarch64-unknown-linux-gnu`, `x86_64-pc-windows-msvc`, `aarch64-apple-darwin`
+  and `x86_64-apple-darwin`, packs each into an archive together with the docs,
+  writes `SHA256SUMS.txt` and publishes everything as a GitHub release.
+  `workflow_dispatch` runs the same matrix without publishing, which is handy
+  for testing.

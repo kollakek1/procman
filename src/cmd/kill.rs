@@ -1,4 +1,4 @@
-//! `procman kill` — завершение процессов по PID или имени (аналог «Снять задачу»).
+//! `procman kill` — ending processes by PID or name (the End task action).
 
 use std::collections::HashSet;
 use std::io::Write as _;
@@ -16,56 +16,56 @@ use crate::util::{bytes_short, sanitize, thousands};
 
 #[derive(Args, Debug)]
 pub struct KillArgs {
-    /// PID (число) или имя процесса; можно указать несколько значений
-    #[arg(required = true, value_name = "ЦЕЛЬ")]
+    /// PID (a number) or process name; several values are allowed
+    #[arg(required = true, value_name = "TARGET")]
     pub targets: Vec<String>,
-    /// Не спрашивать подтверждение
+    /// Do not ask for confirmation
     #[arg(short = 'y', long)]
     pub yes: bool,
-    /// Только показать, что будет завершено, ничего не делать
+    /// Only show what would be ended, do nothing
     #[arg(long)]
     pub dry_run: bool,
-    /// Мягкое завершение (SIGTERM). Если платформа его не поддерживает
-    /// (Windows), будет применено принудительное завершение
+    /// Graceful termination (SIGTERM). When the platform does not support it
+    /// (Windows), a forced termination is used instead
     #[arg(short = 't', long)]
     pub terminate: bool,
-    /// Завершить также все дочерние процессы
+    /// Also end all child processes
     #[arg(long)]
     pub with_children: bool,
-    /// Вывести отчёт в JSON
+    /// Print the report as JSON
     #[arg(long)]
     pub json: bool,
 }
 
-/// Итог по одному процессу — в человекочитаемом и JSON-виде.
+/// The result for a single process — in human readable and JSON form.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Outcome {
-    /// Сигнал отправлен и процесс уже завершился.
+    /// The signal was sent and the process has already exited.
     Finished,
-    /// Отправлен мягкий сигнал, процесс ещё завершается.
+    /// A graceful signal was sent and the process is still ending.
     Graceful,
-    /// Система отказала в завершении.
+    /// The system refused to end the process.
     Denied,
-    /// Процесса уже нет.
+    /// The process is already gone.
     Missing,
 }
 
 impl Outcome {
     fn label(self) -> &'static str {
         match self {
-            Self::Finished => "завершён",
-            Self::Graceful => "отправлен SIGTERM",
-            Self::Denied => "отказано",
-            Self::Missing => "не найден",
+            Self::Finished => "ended",
+            Self::Graceful => "SIGTERM sent",
+            Self::Denied => "denied",
+            Self::Missing => "gone",
         }
     }
 
     fn note(self) -> &'static str {
         match self {
-            Self::Finished => "принудительно",
-            Self::Graceful => "мягкое завершение",
-            Self::Denied => "недостаточно прав или процесс защищён",
-            Self::Missing => "процесс уже завершился",
+            Self::Finished => "forced",
+            Self::Graceful => "graceful termination",
+            Self::Denied => "not enough rights or the process is protected",
+            Self::Missing => "the process has already exited",
         }
     }
 
@@ -84,16 +84,16 @@ fn confirm(prompt: &str) -> Result<bool> {
     let mut answer = String::new();
     std::io::stdin().read_line(&mut answer)?;
     let answer = answer.trim().to_lowercase();
-    Ok(matches!(answer.as_str(), "y" | "yes" | "д" | "да" | "1"))
+    Ok(matches!(answer.as_str(), "y" | "yes" | "1"))
 }
 
 fn plan_table(plan: &[Proc]) -> Table {
     let cols = vec![
         Col::new("PID", Align::Right, Some(8)).min_width(5),
-        Col::new("ИМЯ", Align::Left, None).min_width(14).flexible(),
+        Col::new("NAME", Align::Left, None).min_width(14).flexible(),
         Col::new("CPU", Align::Right, Some(7)).min_width(6),
-        Col::new("ПАМЯТЬ", Align::Right, Some(9)).min_width(6),
-        Col::new("ПОЛЬЗОВАТЕЛЬ", Align::Left, Some(20)).min_width(8),
+        Col::new("MEMORY", Align::Right, Some(9)).min_width(6),
+        Col::new("USER", Align::Left, Some(20)).min_width(8),
     ];
     let mut table = Table::new(cols);
     for proc_ in plan {
@@ -108,7 +108,7 @@ fn plan_table(plan: &[Proc]) -> Table {
     table
 }
 
-/// Убирает дубликаты PID, сохраняя порядок появления.
+/// Removes duplicate PIDs while keeping the order of appearance.
 fn dedupe(procs: Vec<Proc>) -> Vec<Proc> {
     let mut seen: HashSet<u32> = HashSet::new();
     let mut result = Vec::with_capacity(procs.len());
@@ -120,10 +120,10 @@ fn dedupe(procs: Vec<Proc>) -> Vec<Proc> {
     result
 }
 
-/// Выполняет подкоманду `kill`.
+/// Runs the `kill` subcommand.
 pub fn run(args: KillArgs) -> Result<()> {
     if args.json && !args.yes {
-        bail!("в режиме --json подтверждение невозможно: добавьте -y");
+        bail!("confirmation is not possible in --json mode: add -y");
     }
 
     let mut collector = Collector::new();
@@ -141,12 +141,12 @@ pub fn run(args: KillArgs) -> Result<()> {
     }
 
     if planned.is_empty() {
-        bail!("процессы не найдены: {}", missing.join(", "));
+        bail!("no processes found: {}", missing.join(", "));
     }
     if !missing.is_empty() {
         eprintln!(
             "{}",
-            ansi::yellow(&format!("Не найдено: {}", missing.join(", ")))
+            ansi::yellow(&format!("Not found: {}", missing.join(", ")))
         );
     }
 
@@ -167,21 +167,21 @@ pub fn run(args: KillArgs) -> Result<()> {
     if plan.iter().any(|p| p.pid == self_pid) {
         plan.retain(|p| p.pid != self_pid);
         if plan.is_empty() {
-            bail!("отказ: единственная цель — сам procman (PID {self_pid})");
+            bail!("refusing: the only target is procman itself (PID {self_pid})");
         }
         eprintln!(
             "{}",
-            ansi::yellow("Собственный процесс procman пропущен — завершить его нельзя")
+            ansi::yellow("Skipping procman's own process — it cannot be ended")
         );
     }
 
     eprintln!(
         "{}",
         ansi::bold(&format!(
-            "К завершению: {}{}",
-            crate::util::plural(plan.len() as u64, "процесс", "процесса", "процессов"),
+            "About to end: {}{}",
+            crate::util::plural(plan.len() as u64, "process", "processes"),
             if args.terminate {
-                " (мягкий режим)"
+                " (graceful mode)"
             } else {
                 ""
             }
@@ -192,20 +192,17 @@ pub fn run(args: KillArgs) -> Result<()> {
     }
 
     if args.dry_run {
-        eprintln!(
-            "{}",
-            ansi::yellow("Режим проверки: ни один процесс не завершён.")
-        );
+        eprintln!("{}", ansi::yellow("Dry run: no process was ended."));
         return Ok(());
     }
 
     if !args.yes
         && !confirm(&format!(
-            "Завершить {}? [y/N] ",
-            crate::util::plural(plan.len() as u64, "процесс", "процесса", "процессов")
+            "End {}? [y/N] ",
+            crate::util::plural(plan.len() as u64, "process", "processes")
         ))?
     {
-        println!("{}", ansi::yellow("Отменено."));
+        println!("{}", ansi::yellow("Cancelled."));
         return Ok(());
     }
 
@@ -221,7 +218,7 @@ pub fn run(args: KillArgs) -> Result<()> {
         report.push((proc_.pid, proc_.name.clone(), outcome));
     }
 
-    // Проверяем фактическое состояние: процесс мог завершаться асинхронно.
+    // Verify the actual state: a process may exit asynchronously.
     let mut still_alive: Vec<u32> = Vec::new();
     let mut finished: Vec<u32> = Vec::new();
     for proc_ in &plan {
@@ -236,9 +233,9 @@ pub fn run(args: KillArgs) -> Result<()> {
         .iter()
         .map(|(pid, name, outcome)| {
             let state = if still_alive.contains(pid) {
-                "завершается"
+                "ending"
             } else {
-                "завершён"
+                "ended"
             };
             json::object(vec![
                 ("pid", json::number(*pid)),
@@ -262,11 +259,9 @@ pub fn run(args: KillArgs) -> Result<()> {
     } else {
         let cols = vec![
             Col::new("PID", Align::Right, Some(8)).min_width(5),
-            Col::new("ИМЯ", Align::Left, None).min_width(14).flexible(),
-            Col::new("ИТОГ", Align::Left, Some(18)).min_width(8),
-            Col::new("ПРИМЕЧАНИЕ", Align::Left, None)
-                .min_width(10)
-                .flexible(),
+            Col::new("NAME", Align::Left, None).min_width(14).flexible(),
+            Col::new("RESULT", Align::Left, Some(18)).min_width(8),
+            Col::new("NOTE", Align::Left, None).min_width(10).flexible(),
         ];
         let mut table = Table::new(cols);
         for (pid, name, outcome) in &report {
@@ -276,7 +271,7 @@ pub fn run(args: KillArgs) -> Result<()> {
                 outcome.style()
             };
             let note = if still_alive.contains(pid) {
-                "завершается"
+                "ending"
             } else {
                 outcome.note()
             };
@@ -297,15 +292,15 @@ pub fn run(args: KillArgs) -> Result<()> {
             .filter(|(pid, _, _)| !finished.contains(pid))
             .count();
         println!(
-            "Готово: завершено {}, ещё завершается {}, неудач {}",
+            "Done: ended {}, still ending {}, failures {}",
             thousands(finished.len() as u64),
             thousands(remaining as u64),
             thousands(failures as u64),
         );
         if failures > 0 {
             bail!(
-                "не удалось завершить {} — запустите терминал с повышенными правами",
-                crate::util::plural(failures as u64, "процесс", "процесса", "процессов")
+                "could not end {} — run the terminal with elevated rights",
+                crate::util::plural(failures as u64, "process", "processes")
             );
         }
         return Ok(());
@@ -318,8 +313,8 @@ pub fn run(args: KillArgs) -> Result<()> {
         .count();
     if failures > 0 {
         bail!(
-            "не удалось завершить {} — запустите терминал с повышенными правами",
-            crate::util::plural(failures as u64, "процесс", "процесса", "процессов")
+            "could not end {} — run the terminal with elevated rights",
+            crate::util::plural(failures as u64, "process", "processes")
         );
     }
     Ok(())

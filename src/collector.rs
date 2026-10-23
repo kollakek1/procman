@@ -1,8 +1,8 @@
-//! Сбор данных о системе через `sysinfo`.
+//! Collecting system data through `sysinfo`.
 //!
-//! Коллектор живёт всё время работы команды: он хранит состояние между
-//! обновлениями, что нужно для корректных процентов CPU (sysinfo считает их
-//! как разницу между двумя выборками) и скоростей сети.
+//! The collector lives for the whole run of a command: it keeps state between
+//! refreshes, which is required for correct CPU percentages (`sysinfo` computes
+//! them as the difference between two samples) and for network rates.
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -14,29 +14,29 @@ use sysinfo::{
 
 use crate::model::{CoreInfo, CpuInfo, DiskInfo, HostInfo, MemInfo, NetInfo, Proc, Snapshot};
 
-/// Выводит время этапа в stderr при включённой диагностике (`PROCMAN_TIMING=1`).
+/// Prints a stage timing to stderr when diagnostics are enabled (`PROCMAN_TIMING=1`).
 fn trace(message: &str) {
     if std::env::var_os("PROCMAN_TIMING").is_some() {
         eprintln!("[timing] {message}");
     }
 }
 
-/// Результат попытки завершить процесс.
+/// The result of an attempt to end a process.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum KillOutcome {
-    /// Сигнал отправлен (процесс может завершаться ещё несколько мгновений).
+    /// The signal was sent (the process may take a moment to actually exit).
     Sent,
-    /// Система отказала (недостаточно прав или процесс защищён).
+    /// The system refused (not enough rights, or the process is protected).
     Denied,
-    /// Такого PID больше нет.
+    /// That PID no longer exists.
     NotFound,
 }
 
-/// Что именно произошло при завершении.
+/// Exactly what happened while ending a process.
 #[derive(Clone, Copy, Debug)]
 pub struct KillReport {
     pub outcome: KillOutcome,
-    /// Удалось ли применить мягкое завершение, а не принудительное.
+    /// Whether a graceful termination was applied instead of a forced one.
     pub graceful_used: bool,
 }
 
@@ -46,7 +46,8 @@ pub struct Collector {
     disks: Disks,
     nets: Networks,
     last: Instant,
-    /// Нужен ли общий процент загрузки CPU (он же даёт модель и частоту процессора).
+    /// Whether the global CPU percentage is wanted (it also brings the CPU
+    /// brand and frequency along).
     want_global_cpu: bool,
 }
 
@@ -57,13 +58,13 @@ impl Default for Collector {
 }
 
 impl Collector {
-    /// Создаёт коллектор и прогревает счётчики (см. [`Collector::warm_up`]).
+    /// Creates a collector and warms the counters up (see [`Collector::warm_up`]).
     pub fn new() -> Self {
         let t0 = Instant::now();
-        // Не используем `System::new_all()`: он читает переменные окружения всех
-        // процессов и сразу же делает дорогой замер CPU (на этом компьютере —
-        // примерно 0.7 с лишнего времени на каждый запуск). Ни то, ни другое не
-        // нужно на старте: процессорные данные догружает `with_global_cpu`.
+        // `System::new_all()` is deliberately avoided: it reads the environment
+        // of every process and immediately performs an expensive CPU sample
+        // (about 0.7 s of extra work per run on this machine). Neither is needed
+        // at startup — CPU data is loaded on demand by `with_global_cpu`.
         let sys = System::new_with_specifics(
             RefreshKind::nothing()
                 .with_cpu(CpuRefreshKind::nothing())
@@ -72,7 +73,7 @@ impl Collector {
         let users = Users::new_with_refreshed_list();
         let disks = Disks::new_with_refreshed_list();
         let nets = Networks::new_with_refreshed_list();
-        trace(&format!("инициализация: {} мс", t0.elapsed().as_millis()));
+        trace(&format!("init: {} ms", t0.elapsed().as_millis()));
         let mut collector = Self {
             sys,
             users,
@@ -82,59 +83,59 @@ impl Collector {
             want_global_cpu: false,
         };
         collector.warm_up();
-        trace(&format!("прогрев: {} мс всего", t0.elapsed().as_millis()));
+        trace(&format!("warm-up: {} ms total", t0.elapsed().as_millis()));
         collector
     }
 
-    /// Прогрев перед первым снимком.
+    /// Warm-up before the first snapshot.
     ///
-    /// `sysinfo` считает загрузку процесса по разнице двух выборок, причём
-    /// первые две разницы подряд всегда получаются нулевыми (проверено на Windows:
-    /// ядро, занятое на 100%, показывает 0.0% и 0.1%). Поэтому нужны три выборки
-    /// с паузами не меньше `MINIMUM_CPU_UPDATE_INTERVAL`: базовая, промежуточная
-    /// (её результат отбрасывается) и рабочая — она приходит из [`Collector::refresh`].
-    /// Набор полей у всех выборок должен совпадать.
+    /// `sysinfo` computes a process load from the difference between two
+    /// samples, and the first two differences in a row always come out as zero
+    /// (verified on Windows: a core busy at 100% reports 0.0% and then 0.1%).
+    /// Three samples are therefore required, spaced by at least
+    /// `MINIMUM_CPU_UPDATE_INTERVAL`: a base sample, an intermediate one whose
+    /// result is thrown away, and the working one produced by
+    /// [`Collector::refresh`]. All samples must request the same set of fields.
     fn warm_up(&mut self) {
-        self.sample_processes(); // базовая выборка
+        self.sample_processes(); // base sample
         self.wait_for_interval();
-        self.sample_processes(); // промежуточная (её результат отбрасывается)
+        self.sample_processes(); // intermediate (its result is discarded)
     }
 
-    /// Делает выборку процессов и запоминает момент выборки: именно от него
-    /// отсчитывается интервал до следующей — иначе первая (самая долгая) выборка
-    /// «съедает» паузу, и следующий замер оказывается слишком коротким.
+    /// Takes a process sample and records its moment: the interval to the next
+    /// sample is measured from there. Otherwise the first (slowest) sample eats
+    /// the pause and the following measurement turns out too short.
     fn sample_processes(&mut self) {
         self.refresh_processes();
         self.last = Instant::now();
     }
 
-    /// Включает расчёт общего процента загрузки CPU. Заодно загружает модель и
-    /// частоту процессора — в `sysinfo` это один и тот же дорогой первый вызов
-    /// (на этом компьютере ~0.6 с: обращение к счётчикам производительности),
-    /// поэтому его запрашивают только `list`, `summary` и `watch`.
+    /// Enables the global CPU percentage. It also loads the CPU brand and
+    /// frequency, because in `sysinfo` that is the same expensive first call
+    /// (~0.6 s here: the first touch of the performance counters). Only `list`,
+    /// `summary` and `watch` ask for it.
     ///
-    /// Сам замер всегда получается мусорным (показывает 100%): это лишь базовая
-    /// точка для честного замера в [`Collector::refresh`]. Пауза здесь не нужна —
-    /// подойдёт и та базовая точка, что уже есть в счётчиках.
+    /// The sample itself is always garbage (it reports 100%): it merely serves
+    /// as the base point for the honest measurement taken in
+    /// [`Collector::refresh`]. No pause is needed here — the base point already
+    /// present in the counters will do.
     #[must_use]
     pub fn with_global_cpu(mut self) -> Self {
         if !self.want_global_cpu {
-            // `refresh_cpu_all` заодно достаёт модель и частоту процессора — это
-            // тот самый дорогой первый вызов, о котором сказано выше.
             self.cpu_sample();
             self.want_global_cpu = true;
         }
         self
     }
 
-    /// Делает замер CPU и отмечает его время — от него считается интервал до
-    /// следующего замера.
+    /// Takes a CPU sample and records its moment — the interval to the next
+    /// measurement is counted from there.
     fn cpu_sample(&mut self) {
         self.sys.refresh_cpu_all();
         self.last = Instant::now();
     }
 
-    /// Читает текущее состояние процессора.
+    /// Reads the current CPU state.
     fn read_cpu(&self) -> CpuInfo {
         let cpus = self.sys.cpus();
         CpuInfo {
@@ -154,10 +155,10 @@ impl Collector {
         }
     }
 
-    /// Обновляет данные процессов по нужному набору полей.
+    /// Refreshes process data with the required set of fields.
     ///
-    /// `OnlyIfNotSet` означает, что «дорогие» поля (путь, командная строка,
-    /// рабочий каталог, владелец) читаются один раз для каждого процесса.
+    /// `OnlyIfNotSet` means the expensive fields (executable path, command line,
+    /// working directory, owner) are read once per process.
     fn refresh_processes(&mut self) {
         self.sys.refresh_processes_specifics(
             ProcessesToUpdate::All,
@@ -173,11 +174,11 @@ impl Collector {
         );
     }
 
-    /// Минимальная пауза между выборками: без неё проценты CPU недостоверны.
+    /// The minimum pause between samples: CPU percentages are unreliable without it.
     ///
-    /// К `MINIMUM_CPU_UPDATE_INTERVAL` добавляется небольшой запас: sysinfo
-    /// пропускает расчёт, если интервал получился чуть короче минимума, а
-    /// системный таймер Windows даёт шаг около 15 мс.
+    /// A small margin is added to `MINIMUM_CPU_UPDATE_INTERVAL`: `sysinfo`
+    /// skips the computation when the interval comes out slightly below the
+    /// minimum, and the Windows scheduler ticks roughly every 15 ms.
     fn wait_for_interval(&self) {
         let target = sysinfo::MINIMUM_CPU_UPDATE_INTERVAL + Duration::from_millis(25);
         let elapsed = self.last.elapsed();
@@ -186,17 +187,17 @@ impl Collector {
         }
     }
 
-    /// Обновляет данные и возвращает новый снимок.
+    /// Refreshes the data and returns a new snapshot.
     ///
-    /// `extended` включает диски и сети — они дороже в сборе, поэтому
-    /// список процессов их не запрашивает.
+    /// `extended` adds disks and networks — they are more expensive to gather,
+    /// so the plain process list does not request them.
     pub fn refresh(&mut self, extended: bool) -> Snapshot {
         let t0 = Instant::now();
         self.wait_for_interval();
         let elapsed = self.last.elapsed().as_secs_f64();
 
-        // Загрузку CPU снимаем сразу: следующий за ним замер процессов
-        // пересчитывает и перезаписывает это значение.
+        // The CPU load is read immediately: the process sample that follows
+        // recomputes and overwrites this value.
         let cpu = if self.want_global_cpu {
             self.sys.refresh_cpu_usage();
             Some(self.read_cpu())
@@ -216,22 +217,18 @@ impl Collector {
         let t_ext = t0.elapsed().as_millis();
 
         trace(&format!(
-            "снимок{}: подготовка {t_cpu} мс, процессы {t_proc} мс, доп. {t_ext} мс",
-            if extended {
-                " (расширенный)"
-            } else {
-                ""
-            }
+            "snapshot{}: prep {t_cpu} ms, processes {t_proc} ms, extra {t_ext} ms",
+            if extended { " (extended)" } else { "" }
         ));
         self.build(extended, elapsed, cpu)
     }
 
-    /// Пауза между двумя снимками (для честных скоростей сети и CPU).
+    /// A pause between two snapshots (for honest network and CPU rates).
     pub fn pause(duration: Duration) {
         std::thread::sleep(duration);
     }
 
-    /// `cpu` — заранее снятая загрузка процессора (см. [`Collector::refresh`]).
+    /// `cpu` is a CPU load sampled in advance (see [`Collector::refresh`]).
     fn build(&self, extended: bool, elapsed: f64, cpu: Option<CpuInfo>) -> Snapshot {
         let t0 = Instant::now();
         let cpus = self.sys.cpus();
@@ -244,8 +241,8 @@ impl Collector {
             total_swap: self.sys.total_swap(),
             used_swap: self.sys.used_swap(),
         };
-        // `System::load_average()` на Windows ничего не считает (возвращает нули),
-        // но первый вызов стоит около 0.7 с — поэтому там он просто не нужен.
+        // On Windows `System::load_average()` computes nothing (it returns
+        // zeros) but its first call costs about 0.7 s, so it is simply skipped there.
         let load = if cfg!(windows) {
             sysinfo::LoadAvg {
                 one: 0.0,
@@ -280,7 +277,7 @@ impl Collector {
             .map(|(pid, process)| self.to_proc(*pid, process))
             .collect();
 
-        // Количество потомков — как в диспетчере задач рядом с именем.
+        // The number of descendants — like the count next to a name in Task Manager.
         let mut children: HashMap<u32, usize> = HashMap::new();
         for proc_ in &procs {
             if let Some(parent) = proc_.ppid {
@@ -330,7 +327,7 @@ impl Collector {
             procs,
             elapsed,
         };
-        trace(&format!("сборка снимка: {} мс", t0.elapsed().as_millis()));
+        trace(&format!("snapshot build: {} ms", t0.elapsed().as_millis()));
         snapshot
     }
 
@@ -346,8 +343,8 @@ impl Collector {
             .collect::<Vec<_>>()
             .join(" ");
         let disk = process.disk_usage();
-        // sysinfo отдаёт загрузку одного ядра (может превышать 100%),
-        // поэтому делим на число логических ядер — как считает диспетчер задач.
+        // `sysinfo` reports a single core's load (it can exceed 100%), so the
+        // value is divided by the number of logical cores — the way Task Manager counts it.
         let raw = process.cpu_usage();
         let cores = self.sys.cpus().len().max(1) as f32;
         Proc {
@@ -371,8 +368,8 @@ impl Collector {
         }
     }
 
-    /// Завершает процесс. `graceful` — попытка мягкого завершения (SIGTERM);
-    /// если платформа его не поддерживает (Windows), используется принудительное.
+    /// Ends a process. `graceful` attempts a soft termination (SIGTERM); when
+    /// the platform does not support it (Windows), a forced one is used.
     pub fn kill(&self, pid: u32, graceful: bool) -> KillReport {
         let id = Pid::from_u32(pid);
         let Some(process) = self.sys.process(id) else {
@@ -408,7 +405,7 @@ impl Collector {
         }
     }
 
-    /// Проверяет, жив ли процесс, обновив только его.
+    /// Checks whether a process is still alive, refreshing only that one.
     pub fn alive(&mut self, pid: u32) -> bool {
         let id = Pid::from_u32(pid);
         self.sys

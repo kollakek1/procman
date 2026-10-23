@@ -1,4 +1,4 @@
-//! procman — диспетчер задач в терминале (аналог Windows Task Manager).
+//! procman — a task manager for your terminal (a Windows Task Manager counterpart).
 
 mod ansi;
 mod cmd;
@@ -22,26 +22,26 @@ use cmd::watch::WatchArgs;
 #[command(
     name = "procman",
     version,
-    about = "procman — диспетчер задач в терминале",
-    long_about = "procman — консольный аналог Диспетчера задач Windows:\n\
-                  список процессов, завершение задач, дерево процессов,\n\
-                  сводка по производительности и живой монитор.",
-    after_help = "ПРИМЕРЫ:\n  \
-                  procman list                     список процессов (как вкладка «Процессы»)\n  \
-                  procman list -n 15 --sort mem    топ-15 процессов по памяти\n  \
-                  procman list -f chrome -c        поиск по имени и показ командных строк\n  \
-                  procman watch                    живой монитор, выход по q\n  \
-                  procman info 4321                подробности о процессе\n  \
-                  procman tree --filter chrome     дерево процессов c фильтром\n  \
-                  procman kill notepad.exe -y      снять задачу без подтверждения\n  \
-                  procman summary --top 10         сводка по производительности",
+    about = "procman — a task manager for your terminal",
+    long_about = "procman is a console counterpart of the Windows Task Manager:\n\
+                  process list, ending tasks, process tree,\n\
+                  performance summary and a live monitor.",
+    after_help = "EXAMPLES:\n  \
+                  procman list                     process list (the Processes tab)\n  \
+                  procman list -n 15 --sort mem    top 15 processes by memory\n  \
+                  procman list -f chrome -c        search by name and show command lines\n  \
+                  procman watch                    live monitor, press q to quit\n  \
+                  procman info 4321                details about a process\n  \
+                  procman tree --filter chrome     process tree with a filter\n  \
+                  procman kill notepad.exe -y      end a task without confirmation\n  \
+                  procman summary --top 10         performance summary",
     disable_help_subcommand = true
 )]
 struct Cli {
-    /// Не использовать цветной вывод (цвет также отключается переменной `NO_COLOR`)
+    /// Do not use colours (also disabled by the `NO_COLOR` environment variable)
     #[arg(long, global = true)]
     no_color: bool,
-    /// ASCII-рамки вместо Unicode-псевдографики
+    /// ASCII borders instead of Unicode box drawing
     #[arg(long, global = true)]
     ascii: bool,
     #[command(subcommand)]
@@ -50,21 +50,21 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
-    /// Список процессов с сортировкой и фильтрами
+    /// List processes with sorting and filters
     #[command(alias = "ps", alias = "ls")]
     List(ListArgs),
-    /// Живой монитор с обновлением в реальном времени
+    /// Live monitor refreshed in real time
     #[command(alias = "top", alias = "mon", alias = "live")]
     Watch(WatchArgs),
-    /// Подробная информация о процессе (PID или имя)
+    /// Detailed information about a process (PID or name)
     Info(InfoArgs),
-    /// Дерево процессов «родитель → потомки»
+    /// Process tree (parent → children)
     #[command(alias = "pstree")]
     Tree(TreeArgs),
-    /// Завершить процесс(ы) по PID или имени
+    /// End one or more processes by PID or name
     #[command(alias = "stop", alias = "taskkill")]
     Kill(KillArgs),
-    /// Сводка по системе: CPU, память, диски, сеть
+    /// System summary: CPU, memory, disks, network
     #[command(alias = "sys", alias = "perf")]
     Summary(SummaryArgs),
 }

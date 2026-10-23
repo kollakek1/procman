@@ -1,9 +1,9 @@
-//! Крошечный писатель JSON — чтобы не тянуть serde только ради `--json`.
+//! A tiny JSON writer — so that `--json` does not pull in `serde`.
 
 use std::fmt::Display;
 use std::fmt::Write as _;
 
-/// Экранирует строку для JSON.
+/// Escapes a string for JSON.
 pub fn escape(input: &str) -> String {
     let mut out = String::with_capacity(input.len() + 2);
     for ch in input.chars() {
@@ -22,17 +22,17 @@ pub fn escape(input: &str) -> String {
     out
 }
 
-/// Строковое значение JSON.
+/// A JSON string value.
 pub fn string(value: &str) -> String {
     format!("\"{}\"", escape(value))
 }
 
-/// Числовое значение JSON.
+/// A JSON number value.
 pub fn number<T: Display>(value: T) -> String {
     value.to_string()
 }
 
-/// Число или `null`.
+/// A number or `null`.
 pub fn number_opt<T: Display>(value: Option<T>) -> String {
     match value {
         Some(v) => v.to_string(),
@@ -40,7 +40,7 @@ pub fn number_opt<T: Display>(value: Option<T>) -> String {
     }
 }
 
-/// Строка или `null`.
+/// A string or `null`.
 pub fn string_opt(value: Option<&str>) -> String {
     match value {
         Some(v) => string(v),
@@ -48,7 +48,7 @@ pub fn string_opt(value: Option<&str>) -> String {
     }
 }
 
-/// Объект из пар «ключ — уже готовое JSON-значение».
+/// An object built from pairs of a key and an already rendered JSON value.
 pub fn object(fields: Vec<(&str, String)>) -> String {
     let body = fields
         .into_iter()
@@ -58,12 +58,12 @@ pub fn object(fields: Vec<(&str, String)>) -> String {
     format!("{{{body}}}")
 }
 
-/// Массив из уже готовых JSON-значений.
+/// An array of already rendered JSON values.
 pub fn array(items: Vec<String>) -> String {
     format!("[{}]", items.join(","))
 }
 
-/// Печатает JSON с отступом (по 2 пробела), чтобы вывод был читаемым.
+/// Re-indents JSON with two spaces so that the output is readable.
 pub fn pretty(value: &str) -> String {
     let mut out = String::with_capacity(value.len() + 32);
     let mut depth = 0usize;
@@ -117,7 +117,7 @@ mod tests {
     #[test]
     fn escaping() {
         assert_eq!(escape("a\"b\\c\nd"), "a\\\"b\\\\c\\nd");
-        assert_eq!(string("ок"), "\"ок\"");
+        assert_eq!(string("café"), "\"café\"");
         assert_eq!(number_opt(Option::<u32>::None), "null");
     }
 

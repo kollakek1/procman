@@ -1,12 +1,12 @@
-//! Рендер таблиц и строк без внешних зависимостей.
+//! Table and line rendering without external dependencies.
 //!
-//! Задача модуля — собрать выровненные строки, которые укладываются в ширину
-//! терминала: «упругие» колонки (имя, командная строка) сжимаются и растягиваются,
-//! остальные не выходят за границы, заданные в `Col`.
+//! The job of this module is to build aligned rows that fit the terminal
+//! width: "elastic" columns (name, command line) shrink and grow, the rest
+//! stay within the bounds given by `Col`.
 //!
-//! Раскраска применяется ПОСЛЕ выравнивания — иначе ANSI-последовательности
-//! попадали бы в подсчёт ширины. Поэтому основная единица вывода — [`Line`]:
-//! она хранит текст по кускам вместе со стилем и знает свою видимую ширину.
+//! Colouring is applied AFTER alignment — otherwise ANSI escape sequences would
+//! be counted as width. The primary output unit is therefore [`Line`]: it keeps
+//! text as styled chunks and knows its own visible width.
 
 use std::fmt::{self, Display};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -16,24 +16,24 @@ use crate::util::{char_len, pad_left, pad_right, truncate};
 
 static ASCII: AtomicBool = AtomicBool::new(false);
 
-/// Включить ASCII-рамки и псевдографику (для терминалов без поддержки Unicode).
+/// Switches to ASCII borders and glyphs (for terminals without Unicode support).
 pub fn set_ascii(value: bool) {
     ASCII.store(value, Ordering::Relaxed);
 }
 
-/// Использовать ASCII-рамки?
+/// Whether ASCII borders are in use.
 pub fn ascii() -> bool {
     ASCII.load(Ordering::Relaxed)
 }
 
-/// Ширина терминала. Если вывод идёт не в терминал (пайп, файл) — 120 символов.
+/// Terminal width. When the output is not a terminal (a pipe or a file), 120.
 pub fn term_width() -> usize {
     crossterm::terminal::size()
         .map_or(120, |(cols, _)| cols as usize)
         .clamp(24, 400)
 }
 
-/// Высота терминала. Если определить не удалось — 30 строк.
+/// Terminal height. When it cannot be determined, 30 rows.
 pub fn term_height() -> usize {
     crossterm::terminal::size()
         .map_or(30, |(_, rows)| rows as usize)
@@ -48,7 +48,7 @@ fn rule_char() -> char {
     if ascii() { '-' } else { '─' }
 }
 
-/// Строка вывода: набор кусков текста со стилями.
+/// An output line: a set of styled text chunks.
 #[derive(Clone, Debug, Default)]
 pub struct Line {
     parts: Vec<(Option<Code>, String)>,
@@ -60,17 +60,17 @@ impl Line {
         Self::default()
     }
 
-    /// Строка без стилей.
+    /// A line without styling.
     pub fn plain(text: impl Into<String>) -> Self {
         Self::new().push(text)
     }
 
-    /// Строка из одного стилизованного куска.
+    /// A line made of a single styled chunk.
     pub fn colored(code: Code, text: impl Into<String>) -> Self {
         Self::new().styled(code, text)
     }
 
-    /// Добавляет кусок текста без стиля.
+    /// Appends an unstyled text chunk.
     #[must_use]
     pub fn push(mut self, text: impl Into<String>) -> Self {
         let text = text.into();
@@ -80,7 +80,7 @@ impl Line {
         self
     }
 
-    /// Добавляет кусок текста заданным цветом.
+    /// Appends a text chunk with the given colour.
     #[must_use]
     pub fn styled(mut self, code: Code, text: impl Into<String>) -> Self {
         let text = text.into();
@@ -90,19 +90,19 @@ impl Line {
         self
     }
 
-    /// Инвертировать цвета всей строки (подсветка выбранной строки).
+    /// Inverts the colours of the whole line (highlighting the selected row).
     #[must_use]
     pub fn reversed(mut self) -> Self {
         self.reverse = true;
         self
     }
 
-    /// Видимая ширина строки (без ANSI-последовательностей).
+    /// Visible width of the line (ANSI sequences excluded).
     pub fn visible(&self) -> usize {
         self.parts.iter().map(|(_, text)| char_len(text)).sum()
     }
 
-    /// Обрезает строку до `width` видимых символов, добавляя многоточие.
+    /// Truncates the line to `width` visible characters, adding an ellipsis.
     #[must_use]
     pub fn truncated(mut self, width: usize, ascii_borders: bool) -> Self {
         if self.visible() <= width {
@@ -140,7 +140,7 @@ impl Line {
         }
     }
 
-    /// Дополняет строку пробелами до `width` видимых символов.
+    /// Pads the line with spaces up to `width` visible characters.
     #[must_use]
     pub fn pad_to(mut self, width: usize) -> Self {
         let visible = self.visible();
@@ -150,7 +150,7 @@ impl Line {
         self
     }
 
-    /// Убирает пробелы в конце строки — чтобы вывод в файл не имел «хвостов».
+    /// Removes trailing spaces, so that output written to a file has no padding.
     #[must_use]
     pub fn trimmed(mut self) -> Self {
         let mut index = self.parts.len();
@@ -167,7 +167,7 @@ impl Line {
         self
     }
 
-    /// Готовый текст с ANSI-кодами.
+    /// The finished text with ANSI codes.
     pub fn text(&self) -> String {
         let mut out = String::new();
         for (code, text) in &self.parts {
@@ -183,7 +183,7 @@ impl Line {
         }
     }
 
-    /// Текст без ANSI-кодов.
+    /// The text without ANSI codes.
     pub fn plain_text(&self) -> String {
         self.parts.iter().map(|(_, text)| text.as_str()).collect()
     }
@@ -195,14 +195,14 @@ impl Display for Line {
     }
 }
 
-/// Выравнивание содержимого колонки.
+/// Alignment of a column's content.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Align {
     Left,
     Right,
 }
 
-/// Стиль ячейки — преобразуется в ANSI-код при печати.
+/// A cell style — converted to an ANSI code when printed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Style {
     Plain,
@@ -233,7 +233,7 @@ impl Style {
         }
     }
 
-    /// Стиль по уровню нагрузки: зелёный < 50%, жёлтый < 80%, иначе красный.
+    /// A style for a load level: green below 50%, yellow below 80%, red above.
     pub fn for_load(percent: f32) -> Self {
         if percent >= 80.0 {
             Self::BrightRed
@@ -244,7 +244,7 @@ impl Style {
         }
     }
 
-    /// Применяет стиль к тексту (без стиля текст возвращается как есть).
+    /// Applies the style to the text (a plain style returns it unchanged).
     pub fn paint(self, text: &str) -> String {
         match self.code() {
             Some(code) => ansi::paint(code, text),
@@ -253,16 +253,16 @@ impl Style {
     }
 }
 
-/// Описание колонки.
+/// A column description.
 #[derive(Clone, Debug)]
 pub struct Col {
     pub title: &'static str,
     pub align: Align,
-    /// Минимальная ширина (обычно — ширина заголовка).
+    /// Minimum width (usually the width of the title).
     pub min: usize,
-    /// Жёсткий предел ширины.
+    /// Hard upper bound for the width.
     pub max: Option<usize>,
-    /// Можно ли отдавать/забирать ширину при подгонке.
+    /// Whether the column may give away or take width while fitting.
     pub flexible: bool,
 }
 
@@ -290,7 +290,7 @@ impl Col {
     }
 }
 
-/// Ячейка таблицы.
+/// A table cell.
 #[derive(Clone, Debug)]
 pub struct Cell {
     pub text: String,
@@ -312,7 +312,7 @@ impl Cell {
         }
     }
 
-    /// Процент с автоматической окраской по уровню нагрузки.
+    /// A percentage coloured automatically by its load level.
     pub fn load(text: impl Into<String>, percent: f32) -> Self {
         Self {
             text: text.into(),
@@ -321,7 +321,7 @@ impl Cell {
     }
 }
 
-/// Таблица: набор колонок и строк.
+/// A table: a set of columns and rows.
 pub struct Table {
     cols: Vec<Col>,
     rows: Vec<Vec<Cell>>,
@@ -339,7 +339,7 @@ impl Table {
         }
     }
 
-    /// Таблица без заголовка и рамок (например, для пар «параметр — значение»).
+    /// A table without a header or borders (for example key — value pairs).
     pub fn plain(cols: Vec<Col>) -> Self {
         Self {
             cols,
@@ -353,7 +353,7 @@ impl Table {
         self.rows.push(row);
     }
 
-    /// Сколько строк в начале вывода занимают заголовок и разделитель.
+    /// How many leading output lines the header and the rule occupy.
     pub fn header_lines(&self) -> usize {
         if self.header {
             1 + usize::from(self.borders)
@@ -362,7 +362,7 @@ impl Table {
         }
     }
 
-    /// Как `render`, но без пробелов в конце строк — для однократного вывода в файл.
+    /// Like `render`, but without trailing spaces — for one-off output to a file.
     pub fn render_tight(&self, width: usize, selected: Option<usize>) -> Vec<Line> {
         self.render(width, selected)
             .into_iter()
@@ -370,7 +370,7 @@ impl Table {
             .collect()
     }
 
-    /// Рендер в строки заданной ширины. `selected` — индекс подсвеченной строки.
+    /// Renders into lines of the given width. `selected` is the highlighted row.
     pub fn render(&self, width: usize, selected: Option<usize>) -> Vec<Line> {
         let widths = self.fit(width);
         let mut lines = Vec::with_capacity(self.rows.len() + 3);
@@ -412,7 +412,7 @@ impl Table {
         lines
     }
 
-    /// Подбирает ширины колонок под доступное место.
+    /// Chooses column widths to fit the available space.
     fn fit(&self, width: usize) -> Vec<usize> {
         let count = self.cols.len();
         let separators = sep_width(count);
@@ -432,7 +432,7 @@ impl Table {
             widths.push(natural.max(col.min));
         }
 
-        // Сжимаем самые широкие колонки, пока не уложимся в ширину экрана.
+        // Shrink the widest columns until everything fits the screen width.
         let mut guard = 0;
         while total(&widths) + separators > width && guard < 4096 {
             guard += 1;
@@ -450,7 +450,7 @@ impl Table {
             }
         }
 
-        // Отдаём лишнее место «упругим» колонкам.
+        // Give the leftover space to the "elastic" columns.
         let flexible: Vec<usize> = (0..count).filter(|idx| self.cols[*idx].flexible).collect();
         if !flexible.is_empty() {
             let mut cursor = 0usize;
@@ -483,7 +483,7 @@ mod tests {
     use super::*;
     use std::sync::Mutex;
 
-    /// Тесты, меняющие глобальные флаги (ASCII-режим, цвета), идут по очереди.
+    /// Tests that touch global flags (ASCII mode, colours) run one at a time.
     static GLOBALS: Mutex<()> = Mutex::new(());
 
     fn globals() -> std::sync::MutexGuard<'static, ()> {
@@ -495,13 +495,13 @@ mod tests {
     fn sample_table() -> Table {
         let cols = vec![
             Col::new("PID", Align::Right, Some(8)),
-            Col::new("ИМЯ", Align::Left, None).flexible(),
+            Col::new("NAME", Align::Left, None).flexible(),
             Col::new("CPU", Align::Right, Some(7)),
         ];
         let mut table = Table::new(cols);
         table.push(vec![
             Cell::new("1234"),
-            Cell::new("очень-длинное-имя-процесса"),
+            Cell::new("a-very-long-process-name"),
             Cell::new("12.3%"),
         ]);
         table.push(vec![Cell::new("7"), Cell::new("ls"), Cell::new("0.0%")]);
@@ -514,7 +514,7 @@ mod tests {
             for line in sample_table().render(width, None) {
                 assert!(
                     line.visible() <= width.max(20),
-                    "строка шире терминала: {:?}",
+                    "line is wider than the terminal: {:?}",
                     line.plain_text()
                 );
             }
@@ -534,6 +534,8 @@ mod tests {
 
     #[test]
     fn long_cells_are_truncated() {
+        let _guard = globals();
+        set_ascii(false);
         let lines = sample_table().render(30, None);
         assert!(lines.iter().any(|l| l.plain_text().contains('…')));
         assert!(lines.iter().all(|l| l.visible() <= 30));

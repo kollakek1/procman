@@ -1,4 +1,4 @@
-//! `procman tree` — дерево процессов «родитель → потомки».
+//! `procman tree` — the process tree (parent → children).
 
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
@@ -15,27 +15,27 @@ use crate::util::{bytes_short, sanitize, thousands};
 
 #[derive(Args, Debug)]
 pub struct TreeArgs {
-    /// Показать только ветку этого процесса (PID или имя)
-    #[arg(short, long, value_name = "ЦЕЛЬ")]
+    /// Show only the branch of this process (PID or name)
+    #[arg(short, long, value_name = "TARGET")]
     pub root: Option<String>,
-    /// Оставить только ветки, в которых встречается подстрока
-    #[arg(short, long, value_name = "ТЕКСТ")]
+    /// Keep only branches that contain the substring
+    #[arg(short, long, value_name = "TEXT")]
     pub filter: Option<String>,
-    /// Только процессы указанного пользователя
-    #[arg(short, long, value_name = "ИМЯ")]
+    /// Only processes owned by this user
+    #[arg(short, long, value_name = "NAME")]
     pub user: Option<String>,
-    /// Сортировка соседних узлов
+    /// Sort sibling nodes
     #[arg(short, long, value_enum, default_value_t = SortBy::Cpu)]
     pub sort: SortBy,
-    /// Максимальная глубина дерева
+    /// Maximum tree depth
     #[arg(long, default_value_t = 12)]
     pub depth: usize,
-    /// Вывести данные в формате JSON (вложенная структура)
+    /// Print the data as JSON (a nested structure)
     #[arg(long)]
     pub json: bool,
 }
 
-/// Суммарные показатели ветки.
+/// Totals of a branch.
 #[derive(Clone, Copy, Debug, Default)]
 struct Agg {
     cpu: f32,
@@ -43,7 +43,7 @@ struct Agg {
     count: usize,
 }
 
-/// Индекс «родитель → дети» плюс агрегаты по ветвям.
+/// A parent → children index plus branch aggregates.
 struct Forest<'a> {
     procs: &'a [Proc],
     pids: HashSet<u32>,
@@ -79,7 +79,7 @@ impl<'a> Forest<'a> {
         self.children.get(&pid).map_or(&[], Vec::as_slice)
     }
 
-    /// Корни — процессы, чей родитель отсутствует в выборке.
+    /// Roots are processes whose parent is missing from the selection.
     fn roots(&self) -> Vec<usize> {
         let roots: Vec<usize> = (0..self.procs.len())
             .filter(|idx| {
@@ -98,7 +98,7 @@ impl<'a> Forest<'a> {
         }
     }
 
-    /// Есть ли в ветке процесс, подходящий под фильтр.
+    /// Whether the branch contains a process matching the filter.
     fn subtree_matches(&self, idx: usize, needle: &str, memo: &mut HashMap<u32, bool>) -> bool {
         let pid = self.procs[idx].pid;
         if let Some(cached) = memo.get(&pid) {
@@ -106,7 +106,7 @@ impl<'a> Forest<'a> {
         }
         let mut matched = self.procs[idx].matches(needle);
         if !matched {
-            // Предварительное значение защищает от циклов в дереве.
+            // The preliminary value protects against cycles in the tree.
             memo.insert(pid, false);
             for &kid in self.kids_of(pid) {
                 if self.subtree_matches(kid, needle, memo) {
@@ -119,7 +119,7 @@ impl<'a> Forest<'a> {
         matched
     }
 
-    /// Агрегаты по ветвям (защита от циклов через предварительную запись в memo).
+    /// Branch aggregates (cycles are handled by writing to the memo up front).
     fn aggregates(&self) -> HashMap<u32, Agg> {
         let mut memo = HashMap::new();
         for idx in 0..self.procs.len() {
@@ -150,7 +150,7 @@ impl<'a> Forest<'a> {
     }
 }
 
-/// Построитель текстового дерева.
+/// A builder for the textual tree.
 struct Renderer<'a> {
     forest: &'a Forest<'a>,
     aggregates: HashMap<u32, Agg>,
@@ -165,15 +165,17 @@ struct Renderer<'a> {
 impl Renderer<'_> {
     fn node(&mut self, idx: usize, prefix: &str, is_last: bool, depth: usize, top_level: bool) {
         if depth > self.max_depth {
-            self.lines
-                .push(format!("{prefix}{}", ansi::dim("… ветка скрыта (--depth)")));
+            self.lines.push(format!(
+                "{prefix}{}",
+                ansi::dim("… branch hidden (--depth)")
+            ));
             return;
         }
         let pid = self.forest.procs[idx].pid;
         if !self.visited.insert(pid) {
             self.lines.push(format!(
                 "{prefix}{}",
-                ansi::red("⟲ цикл в дереве процессов")
+                ansi::red("⟲ cycle in the process tree")
             ));
             return;
         }
@@ -208,7 +210,7 @@ impl Renderer<'_> {
         line.push_str(&ansi::dim(&format!(" ({})", proc_.pid)));
         let _ = write!(
             line,
-            "  CPU {}  ПАМ {}",
+            "  CPU {}  MEM {}",
             ansi::paint(ansi::load_code(proc_.cpu), &format!("{:>6.2}%", proc_.cpu)),
             ansi::paint(
                 ansi::load_code(mem_percent),
@@ -217,7 +219,7 @@ impl Renderer<'_> {
         );
         if agg.count > 1 {
             line.push_str(&ansi::grey(&format!(
-                "  ветка: {}",
+                "  branch: {}",
                 thousands(agg.count as u64)
             )));
         }
@@ -278,7 +280,7 @@ fn json_node(
     ])
 }
 
-/// Выполняет подкоманду `tree`.
+/// Runs the `tree` subcommand.
 pub fn run(args: TreeArgs) -> Result<()> {
     let mut collector = Collector::new();
     let snapshot = collector.refresh(false);
@@ -321,14 +323,14 @@ pub fn run(args: TreeArgs) -> Result<()> {
 
     println!(
         "{} {}",
-        ansi::bold("ДЕРЕВО ПРОЦЕССОВ"),
+        ansi::bold("PROCESS TREE"),
         ansi::dim(&format!(
-            "· всего: {} · корней: {}{}",
+            "· total: {} · roots: {}{}",
             thousands(procs.len() as u64),
             thousands(root_indices.len() as u64),
             args.filter
                 .as_ref()
-                .map_or_else(String::new, |text| format!(" · фильтр: {text}"))
+                .map_or_else(String::new, |text| format!(" · filter: {text}"))
         ))
     );
 
@@ -346,7 +348,7 @@ pub fn run(args: TreeArgs) -> Result<()> {
         renderer.node(*idx, "", true, 0, true);
     }
     if renderer.lines.is_empty() {
-        println!("{}", ansi::yellow("Ничего не найдено — проверьте фильтр."));
+        println!("{}", ansi::yellow("Nothing found — check the filter."));
         return Ok(());
     }
     for line in renderer.lines {

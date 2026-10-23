@@ -1,4 +1,4 @@
-//! `procman summary` — сводка по системе (аналог вкладки «Производительность»).
+//! `procman summary` — a system summary (the Performance tab of Task Manager).
 
 use std::time::Duration;
 
@@ -15,16 +15,16 @@ use crate::util::{bar, bytes_long, bytes_short, thousands, uptime as human_uptim
 
 #[derive(Args, Debug)]
 pub struct SummaryArgs {
-    /// Интервал наблюдения для расчёта скоростей сети, секунды
-    #[arg(short, long, default_value_t = 1.0, value_name = "СЕК")]
+    /// Polling interval used to compute network rates, in seconds
+    #[arg(short, long, default_value_t = 1.0, value_name = "SEC")]
     pub interval: f64,
-    /// Не ждать интервал: мгновенный срез (скорости сети будут нулевыми)
+    /// Do not wait for the interval: an instant snapshot (network rates will be zero)
     #[arg(long)]
     pub fast: bool,
-    /// Сколько самых «горячих» процессов показать
+    /// How many of the busiest processes to show
     #[arg(short = 'n', long, default_value_t = 5, value_name = "N")]
     pub top: usize,
-    /// Вывести данные в формате JSON
+    /// Print the data as JSON
     #[arg(long)]
     pub json: bool,
 }
@@ -37,13 +37,13 @@ fn rate(bytes: u64, seconds: f64) -> String {
     if seconds <= 0.0 {
         return "—".to_owned();
     }
-    format!("{}/с", bytes_short((bytes as f64 / seconds) as u64))
+    format!("{}/s", bytes_short((bytes as f64 / seconds) as u64))
 }
 
 fn cpu_lines(snapshot: &Snapshot, width: usize) -> Vec<String> {
     let cores = &snapshot.cpu.cores;
     if cores.is_empty() {
-        return vec![ansi::grey("нет данных о ядрах")];
+        return vec![ansi::grey("no core data")];
     }
     let per_row = if width >= 150 {
         4
@@ -61,7 +61,7 @@ fn cpu_lines(snapshot: &Snapshot, width: usize) -> Vec<String> {
             for (index, core) in chunk.iter().enumerate() {
                 let label = if core.name.is_empty() {
                     format!(
-                        "ядро {}",
+                        "core {}",
                         cores
                             .iter()
                             .position(|c| c.name == core.name)
@@ -245,7 +245,7 @@ fn rate_bps(delta: u64, elapsed: f64) -> u64 {
     }
 }
 
-/// Выполняет подкоманду `summary`.
+/// Runs the `summary` subcommand.
 pub fn run(args: SummaryArgs) -> Result<()> {
     let mut collector = Collector::new().with_global_cpu();
     let _warmup = collector.refresh(true);
@@ -269,12 +269,12 @@ pub fn run(args: SummaryArgs) -> Result<()> {
         .long_os
         .clone()
         .or_else(|| snapshot.host.os_name.clone())
-        .unwrap_or_else(|| "неизвестная ОС".to_owned());
+        .unwrap_or_else(|| "unknown OS".to_owned());
     println!(
         "{} {}",
-        ansi::bold("ПРОИЗВОДИТЕЛЬНОСТЬ"),
+        ansi::bold("PERFORMANCE"),
         ansi::dim(&format!(
-            "· {host} · {} · аптайм {} · ядер {}/{} · процессов {}",
+            "· {host} · {} · uptime {} · cores {}/{} · processes {}",
             snapshot.host.hostname.clone().unwrap_or_default(),
             human_uptime(snapshot.host.uptime),
             snapshot.host.physical_cores,
@@ -283,8 +283,8 @@ pub fn run(args: SummaryArgs) -> Result<()> {
         ))
     );
 
-    // --- Процессор -------------------------------------------------------
-    section("ПРОЦЕССОР");
+    // --- CPU -------------------------------------------------------------
+    section("CPU");
     let freq = snapshot
         .cpu
         .cores
@@ -295,11 +295,11 @@ pub fn run(args: SummaryArgs) -> Result<()> {
     println!(
         "{} {}",
         ansi::bold(&snapshot.cpu.brand),
-        ansi::dim(&format!("· до {freq} МГц"))
+        ansi::dim(&format!("· up to {freq} MHz"))
     );
     let cpu = snapshot.cpu.global;
     println!(
-        "Итого {} {}",
+        "Total  {} {}",
         ansi::paint(ansi::load_code(cpu), &bar(cpu, 28, table::ascii())),
         ansi::bold(&format!("{cpu:.1}%"))
     );
@@ -310,18 +310,18 @@ pub fn run(args: SummaryArgs) -> Result<()> {
         println!(
             "{}",
             ansi::dim(&format!(
-                "Средняя загрузка: {:.2} / {:.2} / {:.2}",
+                "Load average: {:.2} / {:.2} / {:.2}",
                 snapshot.host.load_avg.0, snapshot.host.load_avg.1, snapshot.host.load_avg.2
             ))
         );
     }
 
-    // --- Память ----------------------------------------------------------
-    section("ПАМЯТЬ");
+    // --- Memory ----------------------------------------------------------
+    section("MEMORY");
     let mem = snapshot.mem;
     let mem_percent = mem.used_percent();
     println!(
-        "ОЗУ      {} {} {} / {}",
+        "RAM      {} {} {} / {}",
         ansi::paint(
             ansi::load_code(mem_percent),
             &bar(mem_percent, 28, table::ascii())
@@ -333,7 +333,7 @@ pub fn run(args: SummaryArgs) -> Result<()> {
     println!(
         "{}",
         ansi::dim(&format!(
-            "         доступно {} · свободно {} · процессов {} / всего памяти {}",
+            "         available {} · free {} · processes {} / total memory {}",
             bytes_long(mem.available),
             bytes_long(mem.free),
             thousands(snapshot.procs.len() as u64),
@@ -343,28 +343,28 @@ pub fn run(args: SummaryArgs) -> Result<()> {
     if mem.total_swap > 0 {
         let swap = mem.swap_percent();
         println!(
-            "Подкачка {} {} {} / {}",
+            "Swap     {} {} {} / {}",
             ansi::paint(ansi::load_code(swap), &bar(swap, 28, table::ascii())),
             ansi::bold(&format!("{swap:.1}%")),
             bytes_long(mem.used_swap),
             bytes_long(mem.total_swap)
         );
     } else {
-        println!("{}", ansi::dim("Подкачка: не используется"));
+        println!("{}", ansi::dim("Swap: not used"));
     }
 
-    // --- Диски -----------------------------------------------------------
-    section("ДИСКИ");
+    // --- Disks -----------------------------------------------------------
+    section("DISKS");
     if snapshot.disks.is_empty() {
-        println!("{}", ansi::grey("диски не обнаружены"));
+        println!("{}", ansi::grey("no disks found"));
     } else {
         let cols = vec![
-            Col::new("ТОМ", Align::Left, Some(22)).min_width(6),
-            Col::new("ФАЙЛОВАЯ СИСТЕМА", Align::Left, Some(14)).min_width(8),
-            Col::new("ВСЕГО", Align::Right, Some(10)).min_width(6),
-            Col::new("ЗАНЯТО", Align::Right, Some(10)).min_width(6),
-            Col::new("СВОБОДНО", Align::Right, Some(10)).min_width(8),
-            Col::new("ЗАГРУЗКА", Align::Left, Some(28))
+            Col::new("VOLUME", Align::Left, Some(22)).min_width(6),
+            Col::new("FILE SYSTEM", Align::Left, Some(16)).min_width(8),
+            Col::new("TOTAL", Align::Right, Some(10)).min_width(6),
+            Col::new("USED", Align::Right, Some(10)).min_width(6),
+            Col::new("FREE", Align::Right, Some(10)).min_width(6),
+            Col::new("USAGE", Align::Left, Some(28))
                 .min_width(12)
                 .flexible(),
         ];
@@ -395,20 +395,20 @@ pub fn run(args: SummaryArgs) -> Result<()> {
         }
     }
 
-    // --- Сеть ------------------------------------------------------------
-    section("СЕТЬ");
+    // --- Network ---------------------------------------------------------
+    section("NETWORK");
     if snapshot.nets.is_empty() {
-        println!("{}", ansi::grey("сетевые интерфейсы не обнаружены"));
+        println!("{}", ansi::grey("no network interfaces found"));
     } else {
         let cols = vec![
-            Col::new("ИНТЕРФЕЙС", Align::Left, Some(26))
+            Col::new("INTERFACE", Align::Left, Some(26))
                 .min_width(10)
                 .flexible(),
-            Col::new("ПРИНЯТО", Align::Right, Some(11)).min_width(8),
-            Col::new("ОТПРАВЛЕНО", Align::Right, Some(11)).min_width(8),
-            Col::new("ПРИЁМ", Align::Right, Some(11)).min_width(8),
-            Col::new("ПЕРЕДАЧА", Align::Right, Some(11)).min_width(8),
-            Col::new("ПАКЕТЫ/с", Align::Right, Some(14)).min_width(8),
+            Col::new("RECEIVED", Align::Right, Some(11)).min_width(8),
+            Col::new("SENT", Align::Right, Some(11)).min_width(8),
+            Col::new("DOWN", Align::Right, Some(11)).min_width(8),
+            Col::new("UP", Align::Right, Some(11)).min_width(8),
+            Col::new("PACKETS/S", Align::Right, Some(14)).min_width(8),
         ];
         let mut table = Table::new(cols);
         for net in &snapshot.nets {
@@ -427,14 +427,14 @@ pub fn run(args: SummaryArgs) -> Result<()> {
         }
     }
 
-    // --- Топ процессов ---------------------------------------------------
-    section("САМЫЕ АКТИВНЫЕ ПРОЦЕССЫ");
+    // --- Busiest processes ------------------------------------------------
+    section("BUSIEST PROCESSES");
     let cols = vec![
         Col::new("PID", Align::Right, Some(8)).min_width(5),
-        Col::new("ИМЯ", Align::Left, None).min_width(14).flexible(),
+        Col::new("NAME", Align::Left, None).min_width(14).flexible(),
         Col::new("CPU", Align::Right, Some(8)).min_width(6),
-        Col::new("ПАМЯТЬ", Align::Right, Some(10)).min_width(6),
-        Col::new("ПОЛЬЗОВАТЕЛЬ", Align::Left, Some(20)).min_width(8),
+        Col::new("MEMORY", Align::Right, Some(10)).min_width(6),
+        Col::new("USER", Align::Left, Some(20)).min_width(8),
     ];
     let mut table = Table::new(cols);
     for proc_ in &top {
