@@ -1,0 +1,36 @@
+[package]
+name = "procman"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "procman — диспетчер задач в терминале (аналог Windows Task Manager)"
+license = "MIT"
+readme = "README.md"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4.5", features = ["derive", "cargo"] }
+crossterm = "0.29"
+sysinfo = "0.39"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+
+[lints.rust]
+unsafe_code = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# Осознанные послабления для CLI:
+too_many_lines = "allow"           # подкоманды — линейные сценарии с выводом
+struct_excessive_bools = "allow"   # структуры-аргументы clap состоят из флагов
+similar_names = "allow"
+needless_pass_by_value = "allow"   # аргументы clap передаются по значению
+unnecessary_wraps = "allow"        # run(...) -> Result ради единообразия диспетчера
+cast_possible_truncation = "allow" # проценты и доли округляются при выводе
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+cast_possible_wrap = "allow"

@@ -1,0 +1,16 @@
+# Сборка
+/target
+**/*.rs.bk
+
+# Артефакты релиза
+/dist
+*.zip
+
+# Редакторы и IDE
+.idea/
+.vscode/
+*.swp
+
+# Windows
+Thumbs.db
+desktop.ini

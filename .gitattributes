@@ -1,0 +1,6 @@
+# Единые окончания строк в репозитории (не зависят от ОС), бинарные файлы — как есть.
+* text=auto eol=lf
+*.exe binary
+*.zip binary
+*.png binary
+*.ico binary
