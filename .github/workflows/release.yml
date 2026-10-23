@@ -91,7 +91,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: procman-${{ matrix.target }}
-          path: dist/
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
           if-no-files-found: error
 
   release:
@@ -108,7 +110,7 @@ jobs:
       - name: Checksums
         run: |
           cd dist
-          sha256sum * > SHA256SUMS.txt
+          sha256sum -- *.zip *.tar.gz > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - name: Publish
